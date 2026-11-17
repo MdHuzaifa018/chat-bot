@@ -1,5 +1,6 @@
 import { generateSessionToken, hashToken } from "../utils/crypto.js";
 import { supabaseRequest } from "../utils/supabase.js";
+import { QuotaService } from "./quota.service.js";
 import { ApiError } from "../utils/apiError.js";
 
 interface ClientRow {
@@ -19,6 +20,7 @@ export interface StartSessionResult {
 /**
  * Session Service
  * Handles client creation/lookup and conversation initialization.
+ * Enforces single active session per student per day policy.
  */
 export class SessionService {
   static async startSession(emailRaw: string, consentStatus: unknown): Promise<StartSessionResult> {
@@ -45,11 +47,31 @@ export class SessionService {
       throw new ApiError(503, "SESSION_START_FAILED", "Could not create client record.");
     }
 
-    // 3. Generate Secure Session Token
+    // 3. Generate Cryptographic 256-bit Session Token
     const sessionToken = generateSessionToken();
     const sessionTokenHash = hashToken(sessionToken);
 
-    // 4. Create New Conversation in Supabase
+    // 4. Enforce: Maximum one active session per student email per day
+    const existingActiveId = await QuotaService.findActiveSessionToday(client.id);
+    if (existingActiveId) {
+      // Refresh session token hash on existing active conversation
+      await supabaseRequest<undefined>(`conversations?id=eq.${existingActiveId}`, {
+        method: "PATCH",
+        body: {
+          session_token_hash: sessionTokenHash,
+          updated_at: new Date().toISOString(),
+        },
+        prefer: "return=minimal",
+      });
+
+      return {
+        clientId: client.id,
+        conversationId: existingActiveId,
+        sessionToken,
+      };
+    }
+
+    // 5. Create New Conversation in Supabase
     const conversations = await supabaseRequest<ConversationRow[]>("conversations?select=id", {
       method: "POST",
       body: [
@@ -74,4 +96,3 @@ export class SessionService {
     };
   }
 }
-

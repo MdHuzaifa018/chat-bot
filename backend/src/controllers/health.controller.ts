@@ -30,6 +30,8 @@ export class HealthController {
       const isHealthy = databaseStatus === "ok";
       res.status(isHealthy ? 200 : 503).json({
         status: isHealthy ? "ok" : "degraded",
+        uptime: Math.floor(process.uptime()),
+        timestamp: new Date().toISOString(),
         database: databaseStatus,
         dify: env.dify.isConfigured ? "configured" : "not_configured",
       });

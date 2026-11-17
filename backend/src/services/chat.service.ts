@@ -1,5 +1,8 @@
 import { supabaseRequest } from "../utils/supabase.js";
-import { DifyService } from "./dify.service.js";
+import { AiOrchestratorService } from "./aiOrchestrator.service.js";
+import { QuotaService } from "./quota.service.js";
+import { FaqService } from "./faq.service.js";
+import { validateAndGuardMessage } from "../utils/guardrails.js";
 import { ApiError } from "../utils/apiError.js";
 import type { SessionContext } from "../types/index.js";
 
@@ -12,6 +15,8 @@ export interface ChatMessageResult {
   reply: string;
   messageId: string;
   timestamp: string;
+  provider?: string;
+  cached?: boolean;
 }
 
 export interface HistoryMessage {
@@ -33,39 +38,89 @@ export interface HistoryResult {
 
 /**
  * Chat Service
- * Coordinates message saving, AI answer generation, and history queries.
+ * Coordinates input validation, student daily quota, FAQ caching,
+ * multi-provider AI failover, and message persistence.
  */
 export class ChatService {
   /**
-   * Process and respond to user messages
+   * Process and respond to user messages with complete guardrails
    */
   static async sendMessage(session: SessionContext, messageRaw: unknown): Promise<ChatMessageResult> {
-    const message = typeof messageRaw === "string" ? messageRaw.trim() : "";
-    if (!message) {
-      throw new ApiError(400, "MESSAGE_REQUIRED", "Please enter a message.");
-    }
-    if (message.length > 4000) {
-      throw new ApiError(400, "MESSAGE_TOO_LONG", "Messages must be 4,000 characters or fewer.");
+    // 1. Phase 9 & 10: Strict 400-char validation, XSS sanitization & prompt injection guard
+    const guardResult = validateAndGuardMessage(messageRaw);
+    const sanitizedMessage = guardResult.sanitizedMessage;
+
+    // Handle direct guardrail rejections (e.g., prompt injection or academic assignments)
+    if (!guardResult.isValid && guardResult.directAnswer) {
+      // Save user attempt and official policy response for audit trail
+      await supabaseRequest<unknown>("messages", {
+        method: "POST",
+        body: [{ conversation_id: session.id, role: "user", content: sanitizedMessage }],
+        prefer: "return=minimal",
+      });
+
+      const assistantRows = await supabaseRequest<MessageRow[]>("messages?select=id,created_at", {
+        method: "POST",
+        body: [{ conversation_id: session.id, role: "assistant", content: guardResult.directAnswer }],
+        prefer: "return=representation",
+      });
+
+      const assistantMsg = assistantRows[0];
+      return {
+        reply: guardResult.directAnswer,
+        messageId: assistantMsg?.id || `guard-${Date.now()}`,
+        timestamp: assistantMsg?.created_at || new Date().toISOString(),
+        provider: "guardrail_policy",
+        cached: false,
+      };
     }
 
-    // 1. Save user message to Supabase
+    // 2. Phase 4: Enforce Student Daily Usage Quota (Atomic Database RPC)
+    await QuotaService.consumeDailyMessageQuota(session.client_id);
+
+    // 3. Phase 5: Check Verified FAQ Cache before invoking LLM (Saves tokens & returns instant answers)
+    const faqResult = await FaqService.checkFaqCache(sanitizedMessage);
+    if (faqResult.hit && faqResult.answer) {
+      await supabaseRequest<unknown>("messages", {
+        method: "POST",
+        body: [{ conversation_id: session.id, role: "user", content: sanitizedMessage }],
+        prefer: "return=minimal",
+      });
+
+      const assistantRows = await supabaseRequest<MessageRow[]>("messages?select=id,created_at", {
+        method: "POST",
+        body: [{ conversation_id: session.id, role: "assistant", content: faqResult.answer }],
+        prefer: "return=representation",
+      });
+
+      const assistantMsg = assistantRows[0];
+      return {
+        reply: faqResult.answer,
+        messageId: assistantMsg?.id || `faq-${Date.now()}`,
+        timestamp: assistantMsg?.created_at || new Date().toISOString(),
+        provider: "faq_cache",
+        cached: true,
+      };
+    }
+
+    // 4. Save user message to Supabase
     await supabaseRequest<unknown>("messages", {
       method: "POST",
-      body: [{ conversation_id: session.id, role: "user", content: message }],
+      body: [{ conversation_id: session.id, role: "user", content: sanitizedMessage }],
       prefer: "return=minimal",
     });
 
-    // 2. Fetch grounded reply from Dify RAG (using Gemini)
-    const difyReply = await DifyService.getReply({
-      message,
+    // 5. Phase 6 & 7: Fetch answer via Multi-Provider AI Failover (Dify -> Groq -> OpenRouter -> Fallback)
+    const aiResponse = await AiOrchestratorService.generateReply({
+      message: sanitizedMessage,
       clientId: session.client_id,
       difyConversationId: session.dify_conversation_id,
     });
 
-    // 3. Save assistant reply to Supabase
+    // 6. Save AI assistant reply to Supabase
     const assistantRows = await supabaseRequest<MessageRow[]>("messages?select=id,created_at", {
       method: "POST",
-      body: [{ conversation_id: session.id, role: "assistant", content: difyReply.answer }],
+      body: [{ conversation_id: session.id, role: "assistant", content: aiResponse.answer }],
       prefer: "return=representation",
     });
 
@@ -74,10 +129,10 @@ export class ChatService {
       throw new ApiError(503, "MESSAGE_SAVE_FAILED", "Failed to save AI assistant response.");
     }
 
-    // 4. Update conversation timestamp & sync Dify conversation ID
+    // 7. Update conversation timestamp & sync Dify conversation ID if applicable
     const conversationUpdate: Record<string, string> = { updated_at: new Date().toISOString() };
-    if (difyReply.conversationId) {
-      conversationUpdate.dify_conversation_id = difyReply.conversationId;
+    if (aiResponse.conversationId) {
+      conversationUpdate.dify_conversation_id = aiResponse.conversationId;
     }
     await supabaseRequest<undefined>(`conversations?id=eq.${session.id}`, {
       method: "PATCH",
@@ -86,9 +141,11 @@ export class ChatService {
     });
 
     return {
-      reply: difyReply.answer,
+      reply: aiResponse.answer,
       messageId: assistantMsg.id,
       timestamp: assistantMsg.created_at,
+      provider: aiResponse.provider,
+      cached: false,
     };
   }
 
@@ -122,4 +179,3 @@ export class ChatService {
     };
   }
 }
-
