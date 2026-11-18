@@ -192,7 +192,7 @@ export const sendMessage = async (message, conversationId) => {
         res({
           id: Date.now().toString(),
           sender: "ai",
-          text: `[Offline Mode] Received: "${message}". Connect to live backend on port 5000 for Dify AI answers.`,
+          text: `[Offline Mode] Received: "${message}". Connect to live backend on port 5000 for AI answers.`,
           timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         }),
       1000

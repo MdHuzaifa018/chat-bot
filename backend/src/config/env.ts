@@ -11,21 +11,16 @@ export interface AppEnv {
     url: string;
     serviceRoleKey: string;
   };
-  dify: {
-    baseUrl: string;
+  gemini: {
     apiKey: string;
-    appMode: "chat" | "workflow";
+    model: string;
     timeoutMs: number;
-    workflowInputField: string;
-    workflowOutputField: string;
+    maxOutputTokens: number;
     isConfigured: boolean;
   };
-  aiFailover: {
-    groqApiKey: string;
-    openRouterApiKey: string;
-    groqModel: string;
-    openRouterModel: string;
+  chatConfig: {
     dailyMessageLimit: number;
+    maxMessageLength: number;
   };
   clerk: {
     secretKey: string;
@@ -52,7 +47,7 @@ function getRequiredEnv(key: string, description: string): string {
 export function loadEnv(): AppEnv {
   const port = Number.parseInt(process.env.PORT ?? "5000", 10);
 
-  // Supabase Config
+  // Supabase Database Configuration
   const supabaseUrlRaw = getRequiredEnv("SUPABASE_URL", "Supabase URL");
   const serviceRoleKey = getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY", "Supabase Service Role Key");
 
@@ -67,20 +62,17 @@ export function loadEnv(): AppEnv {
     throw new ApiError(503, "CONFIG_ERROR", "SUPABASE_URL must use HTTPS.");
   }
 
-  // Dify Config (Primary LLM - Gemini 2.5 Flash)
-  const difyBaseUrl = (process.env.DIFY_API_BASE_URL ?? "https://api.dify.ai/v1").trim().replace(/\/+$/, "");
-  const difyApiKey = process.env.DIFY_API_KEY?.trim() ?? "";
-  const difyAppMode = (process.env.DIFY_APP_MODE?.trim() || "chat") as "chat" | "workflow";
-  const difyTimeoutMs = Number.parseInt(process.env.DIFY_TIMEOUT_MS ?? "15000", 10);
+  // Google Gemini API Configuration (Direct SDK)
+  const geminiApiKey = process.env.GEMINI_API_KEY?.trim() ?? "";
+  const geminiModel = process.env.GEMINI_MODEL?.trim() || "gemini-3.5-flash-lite";
+  const geminiTimeoutMs = Number.parseInt(process.env.GEMINI_TIMEOUT_MS ?? "30000", 10);
+  const geminiMaxOutputTokens = Number.parseInt(process.env.GEMINI_MAX_OUTPUT_TOKENS ?? "1024", 10);
 
-  // Failover AI Providers (Groq & OpenRouter)
-  const groqApiKey = process.env.GROQ_API_KEY?.trim() ?? "";
-  const openRouterApiKey = process.env.OPENROUTER_API_KEY?.trim() ?? "";
-  const groqModel = process.env.GROQ_MODEL?.trim() || "llama-3.3-70b-versatile";
-  const openRouterModel = process.env.OPENROUTER_MODEL?.trim() || "meta-llama/llama-3.3-70b-instruct:free";
+  // Chatbot Limits
   const dailyMessageLimit = Number.parseInt(process.env.DAILY_MESSAGE_LIMIT ?? "8", 10);
+  const maxMessageLength = Number.parseInt(process.env.MAX_MESSAGE_LENGTH ?? "400", 10);
 
-  // Clerk Authentication Configuration
+  // Clerk Dashboard Authentication Configuration
   const clerkSecretKey = process.env.CLERK_SECRET_KEY?.trim() ?? "";
   const clerkPublishableKey = process.env.CLERK_PUBLISHABLE_KEY?.trim() ?? "";
   const clerkWebhookSecret = process.env.CLERK_WEBHOOK_SECRET?.trim() ?? "";
@@ -97,21 +89,16 @@ export function loadEnv(): AppEnv {
       url: parsedUrl.origin,
       serviceRoleKey,
     },
-    dify: {
-      baseUrl: difyBaseUrl,
-      apiKey: difyApiKey,
-      appMode: difyAppMode === "workflow" ? "workflow" : "chat",
-      timeoutMs: Number.isInteger(difyTimeoutMs) && difyTimeoutMs >= 1000 ? difyTimeoutMs : 15000,
-      workflowInputField: process.env.DIFY_WORKFLOW_INPUT_FIELD?.trim() || "query",
-      workflowOutputField: process.env.DIFY_WORKFLOW_OUTPUT_FIELD?.trim() || "answer",
-      isConfigured: Boolean(difyBaseUrl && difyApiKey && !difyApiKey.includes("your_dify_api_key")),
+    gemini: {
+      apiKey: geminiApiKey,
+      model: geminiModel,
+      timeoutMs: Number.isInteger(geminiTimeoutMs) && geminiTimeoutMs >= 1000 ? geminiTimeoutMs : 30000,
+      maxOutputTokens: Number.isInteger(geminiMaxOutputTokens) && geminiMaxOutputTokens > 0 ? geminiMaxOutputTokens : 1024,
+      isConfigured: Boolean(geminiApiKey && !geminiApiKey.includes("your_google_ai_studio_api_key")),
     },
-    aiFailover: {
-      groqApiKey,
-      openRouterApiKey,
-      groqModel,
-      openRouterModel,
+    chatConfig: {
       dailyMessageLimit: Number.isInteger(dailyMessageLimit) && dailyMessageLimit > 0 ? dailyMessageLimit : 8,
+      maxMessageLength: Number.isInteger(maxMessageLength) && maxMessageLength > 0 ? maxMessageLength : 400,
     },
     clerk: {
       secretKey: clerkSecretKey,

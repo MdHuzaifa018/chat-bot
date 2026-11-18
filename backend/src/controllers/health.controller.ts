@@ -33,7 +33,7 @@ export class HealthController {
         uptime: Math.floor(process.uptime()),
         timestamp: new Date().toISOString(),
         database: databaseStatus,
-        dify: env.dify.isConfigured ? "configured" : "not_configured",
+        gemini: env.gemini.isConfigured ? "configured" : "not_configured",
       });
     } catch (error) {
       next(error);

@@ -20,8 +20,8 @@ const PROMPT_INJECTION_PATTERNS = [
 
 // Academic Assignment & Arbitrary Code generation filters
 const ACADEMIC_ASSIGNMENT_PATTERNS = [
-  /(solve|complete|do|write)\s+(my\s+)?(assignment|homework|exam|quiz|coursework)/i,
-  /write\s+(a\s+)?(python|javascript|c\+\+|java|rust|php|sql|bash)\s+(program|script|code)\s+to/i,
+  /(solve|complete|do|write|generate|create)\s+.*(assignment|homework|exam|quiz|coursework|essay|equation)/i,
+  /(write|generate|create|give\s+me)\s+.*(python|javascript|c\+\+|java|rust|php|sql|bash)\s+(program|script|code)/i,
   /give\s+me\s+the\s+answers\s+to\s+test/i,
 ];
 
@@ -52,7 +52,7 @@ export function validateAndGuardMessage(rawMessage: unknown): GuardrailCheckResu
     throw new ApiError(400, "MESSAGE_REQUIRED", "Please enter a message.");
   }
 
-  // Phase 9 Requirement: Maximum message length strictly 400 characters
+  // Maximum message length strictly 400 characters
   if (trimmed.length > 400) {
     throw new ApiError(
       400,
@@ -88,7 +88,7 @@ export function validateAndGuardMessage(rawMessage: unknown): GuardrailCheckResu
         sanitizedMessage: sanitized,
         rejectionReason: "ACADEMIC_INTEGRITY_POLICY",
         directAnswer:
-          "As an official institutional support chatbot, I cannot solve academic assignments, complete coursework, or write arbitrary programming code. Please refer to your faculty or course materials for academic guidance.",
+          "As an official client support assistant, I cannot solve academic assignments, complete coursework, or write arbitrary programming code. Please refer to course materials or faculty for academic guidance.",
       };
     }
   }

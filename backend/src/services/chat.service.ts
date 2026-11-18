@@ -1,5 +1,6 @@
 import { supabaseRequest } from "../utils/supabase.js";
-import { AiOrchestratorService } from "./aiOrchestrator.service.js";
+import { GeminiService } from "./gemini.service.js";
+import { KnowledgeService } from "./knowledge.service.js";
 import { QuotaService } from "./quota.service.js";
 import { FaqService } from "./faq.service.js";
 import { validateAndGuardMessage } from "../utils/guardrails.js";
@@ -39,20 +40,19 @@ export interface HistoryResult {
 /**
  * Chat Service
  * Coordinates input validation, student daily quota, FAQ caching,
- * multi-provider AI failover, and message persistence.
+ * Supabase knowledge retrieval, and direct Google Gemini API answers.
  */
 export class ChatService {
   /**
    * Process and respond to user messages with complete guardrails
    */
   static async sendMessage(session: SessionContext, messageRaw: unknown): Promise<ChatMessageResult> {
-    // 1. Phase 9 & 10: Strict 400-char validation, XSS sanitization & prompt injection guard
+    // 1. Strict 400-char validation, XSS sanitization & prompt injection guard
     const guardResult = validateAndGuardMessage(messageRaw);
     const sanitizedMessage = guardResult.sanitizedMessage;
 
     // Handle direct guardrail rejections (e.g., prompt injection or academic assignments)
     if (!guardResult.isValid && guardResult.directAnswer) {
-      // Save user attempt and official policy response for audit trail
       await supabaseRequest<unknown>("messages", {
         method: "POST",
         body: [{ conversation_id: session.id, role: "user", content: sanitizedMessage }],
@@ -75,10 +75,10 @@ export class ChatService {
       };
     }
 
-    // 2. Phase 4: Enforce Student Daily Usage Quota (Atomic Database RPC)
+    // 2. Enforce Daily Usage Quota
     await QuotaService.consumeDailyMessageQuota(session.client_id);
 
-    // 3. Phase 5: Check Verified FAQ Cache before invoking LLM (Saves tokens & returns instant answers)
+    // 3. Check Verified FAQ Cache before invoking LLM (sub-20ms instant answers)
     const faqResult = await FaqService.checkFaqCache(sanitizedMessage);
     if (faqResult.hit && faqResult.answer) {
       await supabaseRequest<unknown>("messages", {
@@ -110,14 +110,13 @@ export class ChatService {
       prefer: "return=minimal",
     });
 
-    // 5. Phase 6 & 7: Fetch answer via Multi-Provider AI Failover (Dify -> Groq -> OpenRouter -> Fallback)
-    const aiResponse = await AiOrchestratorService.generateReply({
-      message: sanitizedMessage,
-      clientId: session.client_id,
-      difyConversationId: session.dify_conversation_id,
-    });
+    // 5. Retrieve Grounded Knowledge Base Context
+    const contextChunks = await KnowledgeService.retrieveContext(sanitizedMessage);
 
-    // 6. Save AI assistant reply to Supabase
+    // 6. Direct Google Gemini API generation
+    const aiResponse = await GeminiService.generateGroundedReply(sanitizedMessage, contextChunks);
+
+    // 7. Save AI assistant reply to Supabase
     const assistantRows = await supabaseRequest<MessageRow[]>("messages?select=id,created_at", {
       method: "POST",
       body: [{ conversation_id: session.id, role: "assistant", content: aiResponse.answer }],
@@ -129,14 +128,10 @@ export class ChatService {
       throw new ApiError(503, "MESSAGE_SAVE_FAILED", "Failed to save AI assistant response.");
     }
 
-    // 7. Update conversation timestamp & sync Dify conversation ID if applicable
-    const conversationUpdate: Record<string, string> = { updated_at: new Date().toISOString() };
-    if (aiResponse.conversationId) {
-      conversationUpdate.dify_conversation_id = aiResponse.conversationId;
-    }
+    // 8. Update conversation timestamp
     await supabaseRequest<undefined>(`conversations?id=eq.${session.id}`, {
       method: "PATCH",
-      body: conversationUpdate,
+      body: { updated_at: new Date().toISOString() },
       prefer: "return=minimal",
     });
 
