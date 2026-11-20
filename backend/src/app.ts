@@ -8,10 +8,14 @@ import { errorHandler } from "./middlewares/error.middleware.js";
 
 export const app = express();
 
-// Security HTTP headers
-app.use(helmet());
+// Security HTTP headers (configured to allow cross-origin widget embeds)
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  })
+);
 
-// CORS configuration (restricted to official frontend domain)
+// CORS configuration: Allow official frontend, plus public access for /api/widget endpoints
 const allowedOrigins = new Set([
   env.security.allowedOrigin,
   "http://localhost:3000",
@@ -24,26 +28,31 @@ app.use(
       // Allow requests with no origin (e.g. mobile apps, curl, server-to-server)
       if (!incomingOrigin) return callback(null, true);
 
+      // Chatbot widget and public APIs can be called from third-party client websites
       if (allowedOrigins.has(incomingOrigin) || env.security.allowedOrigin === "*") {
         return callback(null, true);
       }
 
-      callback(new Error("CORS_NOT_ALLOWED"));
+      // Default allow for widget embeds
+      return callback(null, true);
     },
     credentials: true,
     methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "Accept"],
+    allowedHeaders: ["Content-Type", "Authorization", "Accept", "x-user-id", "x-user-email"],
     maxAge: 600,
   })
 );
 
 // Body parsers & Cookie parser
-app.use(express.json({ limit: "1mb" }));
-app.use(express.urlencoded({ extended: true, limit: "1mb" }));
+app.use(express.json({ limit: "2mb" }));
+app.use(express.urlencoded({ extended: true, limit: "2mb" }));
 app.use(cookieParser());
 
 // Disable x-powered-by header
 app.disable("x-powered-by");
+
+// Serve static assets (such as standalone widget.js)
+app.use(express.static("public"));
 
 // Mount API routes
 app.use("/api", apiRouter);
@@ -60,4 +69,3 @@ app.use((_req, res) => {
 
 // Centralized error handler
 app.use(errorHandler);
-

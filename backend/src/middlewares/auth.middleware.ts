@@ -28,7 +28,7 @@ export async function requireAuth(
 
     // Query Supabase conversations table for this session token hash
     const rows = await supabaseRequest<SessionContext[]>(
-      `conversations?session_token_hash=eq.${tokenHash}&select=id,client_id,status,dify_conversation_id&limit=1`
+      `conversations?session_token_hash=eq.${tokenHash}&select=id,client_id,status&limit=1`
     );
 
     const session = rows[0];

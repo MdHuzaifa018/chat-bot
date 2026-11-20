@@ -7,7 +7,3 @@ coverage/
 .env
 .env.*
 !.env.example
-
-# Only allow README.md
-*.md
-!README.md
