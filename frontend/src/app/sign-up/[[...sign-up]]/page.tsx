@@ -1,10 +1,15 @@
-import React from "react";
+import React, { Suspense } from "react";
 import { SignUp } from "@clerk/nextjs";
 import Link from "next/link";
 import { Bot, ArrowLeft } from "lucide-react";
 
 export default function SignUpPage() {
-  const hasClerkKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
+  const publishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+  const hasClerkKey = Boolean(
+    publishableKey &&
+    publishableKey.startsWith("pk_") &&
+    !publishableKey.includes("your_")
+  );
 
   return (
     <div className="min-h-screen bg-[#F1F7EF] flex flex-col justify-center items-center p-4 relative font-sans">
@@ -25,18 +30,20 @@ export default function SignUpPage() {
 
       <div className="shadow-xl rounded-3xl overflow-hidden border border-[#E5F0E1] bg-white p-2">
         {hasClerkKey ? (
-          <SignUp
-            path="/sign-up"
-            routing="path"
-            signInUrl="/sign-in"
-            fallbackRedirectUrl="/dashboard"
-            appearance={{
-              elements: {
-                formButtonPrimary: "bg-[#254B35] hover:bg-[#1E3D2B] text-white",
-                card: "shadow-none border-none",
-              },
-            }}
-          />
+          <Suspense fallback={<div className="p-12 text-sm text-[#647267]">Loading sign up...</div>}>
+            <SignUp
+              path="/sign-up"
+              routing="path"
+              signInUrl="/sign-in"
+              fallbackRedirectUrl="/dashboard"
+              appearance={{
+                elements: {
+                  formButtonPrimary: "bg-[#254B35] hover:bg-[#1E3D2B] text-white",
+                  card: "shadow-none border-none",
+                },
+              }}
+            />
+          </Suspense>
         ) : (
           <div className="p-8 max-w-sm text-center space-y-4">
             <h2 className="text-lg font-bold text-[#202820]">Clerk API Key Required</h2>

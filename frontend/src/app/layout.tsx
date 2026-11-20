@@ -11,13 +11,18 @@ export const metadata: Metadata = {
 };
 
 const publishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+const isConfigured = Boolean(
+  publishableKey &&
+  publishableKey.startsWith("pk_") &&
+  !publishableKey.includes("your_")
+);
 
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  if (!publishableKey) {
+  if (!isConfigured) {
     return (
       <html lang="en">
         <body className={inter.className}>{children}</body>
