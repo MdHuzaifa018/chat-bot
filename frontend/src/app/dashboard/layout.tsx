@@ -1,3 +1,5 @@
+"use client";
+
 import React from 'react';
 import Link from 'next/link';
 import { 
@@ -9,12 +11,15 @@ import {
   LogOut,
   Bell
 } from 'lucide-react';
+import { UserButton, SignOutButton } from '@clerk/nextjs';
 
 export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const hasClerkKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
+
   return (
     <div className="min-h-screen bg-[#F1F7EF] flex font-sans text-[#202820]">
       {/* Sidebar */}
@@ -46,10 +51,22 @@ export default function DashboardLayout({
         </nav>
 
         <div className="p-4 border-t border-[#E5F0E1]">
-          <button className="flex items-center gap-3 px-4 py-3 w-full text-[#647267] hover:bg-[#ffeaea] hover:text-red-600 rounded-xl font-medium transition-colors">
-            <LogOut className="w-5 h-5" />
-            Sign Out
-          </button>
+          {hasClerkKey ? (
+            <SignOutButton redirectUrl="/">
+              <button className="flex items-center gap-3 px-4 py-3 w-full text-[#647267] hover:bg-[#ffeaea] hover:text-red-600 rounded-xl font-medium transition-colors">
+                <LogOut className="w-5 h-5" />
+                Sign Out
+              </button>
+            </SignOutButton>
+          ) : (
+            <Link
+              href="/"
+              className="flex items-center gap-3 px-4 py-3 w-full text-[#647267] hover:bg-[#ffeaea] hover:text-red-600 rounded-xl font-medium transition-colors"
+            >
+              <LogOut className="w-5 h-5" />
+              Sign Out
+            </Link>
+          )}
         </div>
       </aside>
 
@@ -63,9 +80,13 @@ export default function DashboardLayout({
               <Bell className="w-5 h-5" />
               <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#A8C99B] rounded-full"></span>
             </button>
-            <div className="w-10 h-10 rounded-full bg-[#254B35] text-white flex items-center justify-center font-semibold">
-              CR
-            </div>
+            {hasClerkKey ? (
+              <UserButton />
+            ) : (
+              <div className="w-10 h-10 rounded-full bg-[#254B35] text-white flex items-center justify-center font-semibold text-sm">
+                CR
+              </div>
+            )}
           </div>
         </header>
 
