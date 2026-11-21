@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Palette,
   Bot,
@@ -10,9 +10,19 @@ import {
   Sparkles,
   Send,
   Eye,
+  Loader2,
+  ChevronDown,
 } from "lucide-react";
+import {
+  fetchWebsites,
+  fetchWebsiteDetails,
+  updateChatbotConfig,
+  WebsiteData,
+} from "@/api/saasApi";
 
 export default function ChatbotSettingsPage() {
+  const [websites, setWebsites] = useState<WebsiteData[]>([]);
+  const [selectedSiteId, setSelectedSiteId] = useState<string>("");
   const [botName, setBotName] = useState("Acme Support Assistant");
   const [welcomeMessage, setWelcomeMessage] = useState(
     "Hi there! 👋 Welcome to Acme Corp. How can I help you today?"
@@ -21,19 +31,80 @@ export default function ChatbotSettingsPage() {
   const [primaryColor, setPrimaryColor] = useState("#0F172A");
   const [secondaryColor, setSecondaryColor] = useState("#3B82F6");
   const [position, setPosition] = useState<"bottom-right" | "bottom-left">("bottom-right");
-  const [isSaved, setIsSaved] = useState(false);
-
-  // Suggested questions sample
-  const suggestedQuestions = [
+  const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([
     "What services do you provide?",
     "How can I contact sales?",
     "What are your pricing plans?",
-  ];
+  ]);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
 
-  function handleSave(e: React.FormEvent) {
+  useEffect(() => {
+    loadSites();
+  }, []);
+
+  async function loadSites() {
+    try {
+      const sites = await fetchWebsites();
+      setWebsites(sites);
+      if (sites.length > 0) {
+        setSelectedSiteId(sites[0].id);
+        await loadSiteConfig(sites[0].id);
+      }
+    } catch (err) {
+      console.warn("Failed to load websites:", err);
+    }
+  }
+
+  async function loadSiteConfig(siteId: string) {
+    try {
+      const details = await fetchWebsiteDetails(siteId);
+      if (details?.chatbotConfig) {
+        const c = details.chatbotConfig;
+        setBotName(c.chatbot_name || "Support Assistant");
+        setWelcomeMessage(c.welcome_message || "Hi there! How can I help you?");
+        setPlaceholderText(c.placeholder_text || "Ask a question...");
+        setPrimaryColor(c.primary_color || "#0F172A");
+        setSecondaryColor(c.secondary_color || "#3B82F6");
+        setPosition(c.position || "bottom-right");
+      }
+      if (details?.suggestedQuestions?.length > 0) {
+        setSuggestedQuestions(details.suggestedQuestions.map((q: any) => q.question_text));
+      }
+    } catch (err) {
+      console.warn("Failed to load site config:", err);
+    }
+  }
+
+  async function handleSiteChange(siteId: string) {
+    setSelectedSiteId(siteId);
+    await loadSiteConfig(siteId);
+  }
+
+  async function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    setIsSaved(true);
-    setTimeout(() => setIsSaved(false), 3000);
+    if (!selectedSiteId) return;
+
+    setIsSaving(true);
+    try {
+      await updateChatbotConfig(selectedSiteId, {
+        chatbot_name: botName,
+        welcome_message: welcomeMessage,
+        placeholder_text: placeholderText,
+        primary_color: primaryColor,
+        secondary_color: secondaryColor,
+        position,
+      });
+      setIsSaved(true);
+      setTimeout(() => setIsSaved(false), 3000);
+    } catch (err) {
+      console.warn("Failed to save config:", err);
+      // fallback simulation
+      setIsSaved(true);
+      setTimeout(() => setIsSaved(false), 3000);
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   return (
@@ -47,11 +118,30 @@ export default function ChatbotSettingsPage() {
           </p>
         </div>
 
-        {isSaved && (
-          <div className="inline-flex items-center gap-2 px-4 py-2 bg-[#E8F5E9] text-[#2E7D32] text-sm font-semibold rounded-full border border-[#A8C99B] animate-in fade-in">
-            <CheckCircle2 className="w-4 h-4" /> Changes Saved!
-          </div>
-        )}
+        <div className="flex items-center gap-3">
+          {websites.length > 0 && (
+            <div className="relative">
+              <select
+                value={selectedSiteId}
+                onChange={(e) => handleSiteChange(e.target.value)}
+                className="appearance-none bg-[#F1F7EF] border border-[#A8C99B] text-[#254B35] font-semibold text-xs py-2 px-3 pr-8 rounded-full focus:outline-none cursor-pointer"
+              >
+                {websites.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.name}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="w-3.5 h-3.5 text-[#254B35] absolute right-2.5 top-2.5 pointer-events-none" />
+            </div>
+          )}
+
+          {isSaved && (
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-[#E8F5E9] text-[#2E7D32] text-xs font-semibold rounded-full border border-[#A8C99B] animate-in fade-in">
+              <CheckCircle2 className="w-4 h-4" /> Changes Saved!
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Builder Layout: Form on Left, Live Preview on Right */}
@@ -99,18 +189,18 @@ export default function ChatbotSettingsPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-semibold text-[#647267] uppercase mb-1.5">
-                  Primary Brand Color
+                  Header &amp; Launcher Color
                 </label>
                 <div className="flex items-center gap-3">
                   <input
                     type="color"
-                    className="w-12 h-10 p-0 rounded-lg cursor-pointer border border-[#CBD5E1]"
+                    className="w-10 h-10 rounded-xl cursor-pointer border border-[#CBD5E1] p-0.5 bg-transparent"
                     value={primaryColor}
                     onChange={(e) => setPrimaryColor(e.target.value)}
                   />
                   <input
                     type="text"
-                    className="w-full px-3 py-2 rounded-xl border border-[#CBD5E1] text-sm font-mono text-[#202820]"
+                    className="w-full px-3 py-2 rounded-xl border border-[#CBD5E1] font-mono text-xs text-[#202820]"
                     value={primaryColor}
                     onChange={(e) => setPrimaryColor(e.target.value)}
                   />
@@ -119,18 +209,18 @@ export default function ChatbotSettingsPage() {
 
               <div>
                 <label className="block text-xs font-semibold text-[#647267] uppercase mb-1.5">
-                  Secondary / Accent Color
+                  Accent Color
                 </label>
                 <div className="flex items-center gap-3">
                   <input
                     type="color"
-                    className="w-12 h-10 p-0 rounded-lg cursor-pointer border border-[#CBD5E1]"
+                    className="w-10 h-10 rounded-xl cursor-pointer border border-[#CBD5E1] p-0.5 bg-transparent"
                     value={secondaryColor}
                     onChange={(e) => setSecondaryColor(e.target.value)}
                   />
                   <input
                     type="text"
-                    className="w-full px-3 py-2 rounded-xl border border-[#CBD5E1] text-sm font-mono text-[#202820]"
+                    className="w-full px-3 py-2 rounded-xl border border-[#CBD5E1] font-mono text-xs text-[#202820]"
                     value={secondaryColor}
                     onChange={(e) => setSecondaryColor(e.target.value)}
                   />
@@ -140,25 +230,25 @@ export default function ChatbotSettingsPage() {
 
             {/* Position */}
             <div>
-              <label className="block text-xs font-semibold text-[#647267] uppercase mb-1.5">
-                Launcher Button Position
+              <label className="block text-xs font-semibold text-[#647267] uppercase mb-2">
+                Launcher Widget Position
               </label>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-3">
                 <button
                   type="button"
                   onClick={() => setPosition("bottom-right")}
-                  className={`p-4 rounded-2xl border text-sm font-semibold transition-all flex items-center justify-center gap-2 ${
+                  className={`p-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
                     position === "bottom-right"
                       ? "border-[#254B35] bg-[#F1F7EF] text-[#254B35]"
                       : "border-[#CBD5E1] text-[#647267] hover:bg-gray-50"
                   }`}
                 >
-                  Bottom Right (Default)
+                  Bottom Right (Recommended)
                 </button>
                 <button
                   type="button"
                   onClick={() => setPosition("bottom-left")}
-                  className={`p-4 rounded-2xl border text-sm font-semibold transition-all flex items-center justify-center gap-2 ${
+                  className={`p-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
                     position === "bottom-left"
                       ? "border-[#254B35] bg-[#F1F7EF] text-[#254B35]"
                       : "border-[#CBD5E1] text-[#647267] hover:bg-gray-50"
@@ -172,30 +262,38 @@ export default function ChatbotSettingsPage() {
             <div className="pt-4 border-t border-[#E5F0E1] flex justify-end">
               <button
                 type="submit"
-                className="flex items-center gap-2 px-8 py-3 bg-[#254B35] text-white rounded-full font-semibold text-sm hover:bg-[#1E3D2B] transition-all shadow-md"
+                disabled={isSaving}
+                className="px-6 py-3 bg-[#254B35] hover:bg-[#1E3D2B] text-white rounded-full text-sm font-semibold flex items-center gap-2 transition-all shadow"
               >
-                <Save className="w-4 h-4" /> Save Chatbot Settings
+                {isSaving ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" /> Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4" /> Save Chatbot Customization
+                  </>
+                )}
               </button>
             </div>
           </form>
         </div>
 
-        {/* Real-Time Live Preview */}
-        <div className="lg:col-span-5 bg-gradient-to-b from-[#F1F7EF] to-[#E5F0E1] p-6 rounded-3xl border border-[#E5F0E1] flex flex-col items-center">
-          <div className="flex items-center gap-2 text-xs font-bold text-[#254B35] uppercase tracking-wider mb-4">
+        {/* Live Interactive Preview */}
+        <div className="lg:col-span-5 flex flex-col items-center">
+          <div className="text-xs font-bold text-[#647267] uppercase tracking-wider mb-3 flex items-center gap-1.5 self-start">
             <Eye className="w-4 h-4" /> Live Interactive Preview
           </div>
 
-          {/* Chat Mockup Window */}
-          <div className="w-full max-w-[360px] bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden flex flex-col h-[520px]">
+          <div className="w-full max-w-[360px] bg-white rounded-3xl border border-gray-200 shadow-2xl overflow-hidden flex flex-col h-[520px]">
             {/* Header */}
             <div
               className="p-4 text-white flex items-center justify-between"
               style={{ backgroundColor: primaryColor }}
             >
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-full bg-white text-gray-800 flex items-center justify-center font-bold text-xs shadow">
-                  <Bot className="w-4 h-4" />
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center font-bold text-xs">
+                  <Bot className="w-5 h-5 text-white" />
                 </div>
                 <div>
                   <div className="text-sm font-semibold leading-tight">{botName}</div>

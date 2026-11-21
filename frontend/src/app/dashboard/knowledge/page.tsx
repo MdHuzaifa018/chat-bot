@@ -1,107 +1,127 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Database,
   Plus,
   RefreshCw,
   FileText,
   HelpCircle,
-  ExternalLink,
   CheckCircle2,
   AlertCircle,
-  Search,
+  Loader2,
 } from "lucide-react";
+import {
+  fetchWebsites,
+  fetchWebsiteDetails,
+  addKnowledgeDoc,
+  WebsiteData,
+  CrawledPageData,
+  KnowledgeDocData,
+} from "@/api/saasApi";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
 
 export default function KnowledgePage() {
   const [activeTab, setActiveTab] = useState<"crawled" | "custom">("crawled");
-  const [searchQuery, setSearchQuery] = useState("");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [docTitle, setDocTitle] = useState("");
   const [docContent, setDocContent] = useState("");
   const [docType, setDocType] = useState<"manual_doc" | "faq">("faq");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Sample data
-  const [crawledPages] = useState([
-    {
-      id: "1",
-      path: "/",
-      title: "Home - SupportAI Official Platform",
-      cleanText:
-        "SupportAI is an autonomous customer support SaaS platform powered by Google Gemini API. Seamlessly crawls customer websites and generates 1-line script embed chatbots.",
-      crawledAt: "2 mins ago",
-    },
-    {
-      id: "2",
-      path: "/pricing",
-      title: "Pricing & SaaS Plans",
-      cleanText:
-        "Starter plan: $29/mo with up to 3 websites and 5,000 monthly conversations. Pro plan: $79/mo with unlimited websites, custom branding, and priority Gemini models.",
-      crawledAt: "2 mins ago",
-    },
-    {
-      id: "3",
-      path: "/faq",
-      title: "Frequently Asked Questions",
-      cleanText:
-        "Q: Can I embed SupportAI on WordPress? A: Yes, simply paste the script tag into your header or footer. Q: How does Gemini grounding work? A: Answers are generated strictly from your indexed website pages.",
-      crawledAt: "2 mins ago",
-    },
-    {
-      id: "4",
-      path: "/contact",
-      title: "Contact & Enterprise Support",
-      cleanText:
-        "Reach out to our engineering support team at support@supportai.example.com or via live chat. SLA response time under 15 minutes.",
-      crawledAt: "2 mins ago",
-    },
-  ]);
+  const [websites, setWebsites] = useState<WebsiteData[]>([]);
+  const [selectedSiteId, setSelectedSiteId] = useState<string>("");
+  const [crawledPages, setCrawledPages] = useState<CrawledPageData[]>([]);
+  const [knowledgeDocs, setKnowledgeDocs] = useState<KnowledgeDocData[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isRecrawling, setIsRecrawling] = useState(false);
 
-  const [customDocs, setCustomDocs] = useState([
-    {
-      id: "c1",
-      title: "Return & Refund Policy (Internal FAQ)",
-      type: "faq",
-      content:
-        "Customers can request a 100% refund within 14 days of purchase with no questions asked. Email billing@supportai.example.com to initiate refund processing.",
-      created: "Today",
-    },
-    {
-      id: "c2",
-      title: "Support Operating Hours & SLA",
-      type: "manual_doc",
-      content:
-        "Our human escalation team is available Monday to Friday from 9 AM to 6 PM EST. AI Chatbot is available 24/7/365 with zero downtime.",
-      created: "Yesterday",
-    },
-  ]);
+  useEffect(() => {
+    loadSites();
+  }, []);
 
-  function handleAddKnowledge(e: React.FormEvent) {
+  async function loadSites() {
+    setLoading(true);
+    try {
+      const sites = await fetchWebsites();
+      setWebsites(sites);
+      if (sites.length > 0) {
+        setSelectedSiteId(sites[0].id);
+        await loadSiteData(sites[0].id);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadSiteData(siteId: string) {
+    try {
+      const details = await fetchWebsiteDetails(siteId);
+      if (details) {
+        setCrawledPages(details.crawledPages || []);
+        setKnowledgeDocs(details.knowledgeDocuments || []);
+      }
+    } catch {
+      setCrawledPages([]);
+      setKnowledgeDocs([]);
+    }
+  }
+
+  async function handleSiteChange(siteId: string) {
+    setSelectedSiteId(siteId);
+    setLoading(true);
+    await loadSiteData(siteId);
+    setLoading(false);
+  }
+
+  async function handleRecrawl() {
+    if (!selectedSiteId || isRecrawling) return;
+    setIsRecrawling(true);
+    setStatusMsg("Re-crawling website...");
+    setErrorMsg(null);
+    try {
+      const res = await fetch(`${API_BASE}/websites/${selectedSiteId}/recrawl`, {
+        method: "POST",
+      });
+      if (!res.ok) throw new Error("Re-crawl failed");
+      const data = await res.json();
+      setStatusMsg(`Website re-crawled! ${data.pagesCrawled || 0} pages refreshed.`);
+      await loadSiteData(selectedSiteId);
+    } catch (err: any) {
+      setErrorMsg(err.message || "Re-crawl failed. Is backend running?");
+      setStatusMsg(null);
+    } finally {
+      setIsRecrawling(false);
+      setTimeout(() => { setStatusMsg(null); setErrorMsg(null); }, 5000);
+    }
+  }
+
+  async function handleAddKnowledge(e: React.FormEvent) {
     e.preventDefault();
-    if (!docTitle.trim() || !docContent.trim()) return;
+    if (!docTitle.trim() || !docContent.trim() || !selectedSiteId) return;
 
     setIsSubmitting(true);
-    setTimeout(() => {
-      setCustomDocs([
-        ...customDocs,
-        {
-          id: `c_${Date.now()}`,
-          title: docTitle.trim(),
-          type: docType,
-          content: docContent.trim(),
-          created: "Just now",
-        },
-      ]);
-      setIsSubmitting(false);
+    setErrorMsg(null);
+    try {
+      await addKnowledgeDoc(selectedSiteId, docTitle.trim(), docContent.trim(), docType);
       setIsAddModalOpen(false);
       setDocTitle("");
       setDocContent("");
-      setStatusMsg("Knowledge chunk added and indexed successfully into Supabase vector store!");
+      setStatusMsg("Knowledge document added and indexed successfully!");
+      await loadSiteData(selectedSiteId);
       setTimeout(() => setStatusMsg(null), 4000);
-    }, 600);
+    } catch (err: any) {
+      setErrorMsg(err.message || "Failed to add document. Is backend running?");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
+
+  // Separate crawled_page docs from manual/faq docs
+  const manualDocs = knowledgeDocs.filter((d) => d.source_type !== "crawled_page");
 
   return (
     <div className="space-y-8">
@@ -115,14 +135,24 @@ export default function KnowledgePage() {
         </div>
 
         <div className="flex items-center gap-3">
+          {websites.length > 1 && (
+            <select
+              value={selectedSiteId}
+              onChange={(e) => handleSiteChange(e.target.value)}
+              className="appearance-none bg-[#F1F7EF] border border-[#A8C99B] text-[#254B35] font-semibold text-xs py-2 px-3 pr-8 rounded-full focus:outline-none cursor-pointer"
+            >
+              {websites.map((w) => (
+                <option key={w.id} value={w.id}>{w.name}</option>
+              ))}
+            </select>
+          )}
           <button
-            onClick={() => {
-              setStatusMsg("Re-crawling website in background...");
-              setTimeout(() => setStatusMsg("Website re-crawled! 4 pages refreshed."), 2000);
-            }}
-            className="flex items-center gap-2 px-4 py-2.5 bg-white border border-[#CBD5E1] text-[#202820] rounded-full text-sm font-semibold hover:bg-[#F8FAF7] transition-all"
+            onClick={handleRecrawl}
+            disabled={isRecrawling}
+            className="flex items-center gap-2 px-4 py-2.5 bg-white border border-[#CBD5E1] text-[#202820] rounded-full text-sm font-semibold hover:bg-[#F8FAF7] transition-all disabled:opacity-50"
           >
-            <RefreshCw className="w-4 h-4 text-[#254B35]" /> Re-crawl Website
+            <RefreshCw className={`w-4 h-4 text-[#254B35] ${isRecrawling ? "animate-spin" : ""}`} />
+            {isRecrawling ? "Re-crawling..." : "Re-crawl Website"}
           </button>
           <button
             onClick={() => setIsAddModalOpen(true)}
@@ -137,6 +167,13 @@ export default function KnowledgePage() {
         <div className="p-4 rounded-2xl bg-[#E8F5E9] border border-[#A8C99B] text-sm text-[#2E7D32] flex items-center gap-2 animate-in fade-in">
           <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
           <span>{statusMsg}</span>
+        </div>
+      )}
+
+      {errorMsg && (
+        <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-sm text-red-700 flex items-center gap-2">
+          <AlertCircle className="w-5 h-5 flex-shrink-0" />
+          <span>{errorMsg}</span>
         </div>
       )}
 
@@ -160,34 +197,53 @@ export default function KnowledgePage() {
               : "text-[#647267] hover:bg-white"
           }`}
         >
-          <HelpCircle className="w-4 h-4" /> Custom FAQs & Docs ({customDocs.length})
+          <HelpCircle className="w-4 h-4" /> Custom FAQs & Docs ({manualDocs.length})
         </button>
       </div>
 
       {/* Content List */}
       <div className="space-y-4">
-        {activeTab === "crawled" ? (
-          crawledPages.map((page) => (
-            <div
-              key={page.id}
-              className="bg-white p-6 rounded-2xl border border-[#E5F0E1] shadow-sm hover:border-[#A8C99B] transition-all"
-            >
-              <div className="flex items-center justify-between gap-4 mb-2">
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-xs px-2.5 py-1 rounded bg-[#F1F7EF] text-[#254B35] font-semibold">
-                    {page.path}
-                  </span>
-                  <h4 className="font-bold text-[#202820] text-base">{page.title}</h4>
-                </div>
-                <span className="text-xs text-[#647267] flex-shrink-0">Indexed {page.crawledAt}</span>
-              </div>
-              <p className="text-sm text-[#647267] leading-relaxed line-clamp-3 bg-[#F8FAF7] p-3 rounded-xl border border-[#F1F7EF]">
-                {page.cleanText}
-              </p>
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-6 h-6 animate-spin text-[#254B35]" />
+            <span className="ml-2 text-sm text-[#647267]">Loading knowledge base...</span>
+          </div>
+        ) : activeTab === "crawled" ? (
+          crawledPages.length === 0 ? (
+            <div className="text-center py-12 bg-white rounded-2xl border border-[#E5F0E1]">
+              <FileText className="w-10 h-10 text-[#A8C99B] mx-auto mb-3" />
+              <p className="text-sm text-[#647267]">No crawled pages yet. Add a website and crawl it first.</p>
             </div>
-          ))
+          ) : (
+            crawledPages.map((page) => (
+              <div
+                key={page.id}
+                className="bg-white p-6 rounded-2xl border border-[#E5F0E1] shadow-sm hover:border-[#A8C99B] transition-all"
+              >
+                <div className="flex items-center justify-between gap-4 mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs px-2.5 py-1 rounded bg-[#F1F7EF] text-[#254B35] font-semibold">
+                      {page.path}
+                    </span>
+                    <h4 className="font-bold text-[#202820] text-base">{page.title}</h4>
+                  </div>
+                  <span className="text-xs text-[#647267] flex-shrink-0">
+                    {page.created_at ? new Date(page.created_at).toLocaleDateString() : ""}
+                  </span>
+                </div>
+                <p className="text-sm text-[#647267] leading-relaxed line-clamp-3 bg-[#F8FAF7] p-3 rounded-xl border border-[#F1F7EF]">
+                  {page.description || page.url}
+                </p>
+              </div>
+            ))
+          )
+        ) : manualDocs.length === 0 ? (
+          <div className="text-center py-12 bg-white rounded-2xl border border-[#E5F0E1]">
+            <HelpCircle className="w-10 h-10 text-[#A8C99B] mx-auto mb-3" />
+            <p className="text-sm text-[#647267]">No custom documents or FAQs yet. Click &quot;Add FAQ / Document&quot; to add one.</p>
+          </div>
         ) : (
-          customDocs.map((doc) => (
+          manualDocs.map((doc) => (
             <div
               key={doc.id}
               className="bg-white p-6 rounded-2xl border border-[#E5F0E1] shadow-sm hover:border-[#A8C99B] transition-all"
@@ -195,15 +251,14 @@ export default function KnowledgePage() {
               <div className="flex items-center justify-between gap-4 mb-2">
                 <div className="flex items-center gap-2">
                   <span className="text-xs px-2.5 py-0.5 rounded-full bg-[#E5F0E1] text-[#254B35] font-semibold uppercase">
-                    {doc.type}
+                    {doc.source_type}
                   </span>
                   <h4 className="font-bold text-[#202820] text-base">{doc.title}</h4>
                 </div>
-                <span className="text-xs text-[#647267] flex-shrink-0">Added {doc.created}</span>
+                <span className="text-xs text-[#647267] flex-shrink-0">
+                  {doc.created_at ? new Date(doc.created_at).toLocaleDateString() : ""}
+                </span>
               </div>
-              <p className="text-sm text-[#647267] leading-relaxed bg-[#F8FAF7] p-3 rounded-xl border border-[#F1F7EF]">
-                {doc.content}
-              </p>
             </div>
           ))
         )}

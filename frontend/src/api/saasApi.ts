@@ -40,6 +40,7 @@ export interface KnowledgeDocData {
   title: string;
   source_type: "crawled_page" | "manual_doc" | "faq";
   source_url?: string;
+  content?: string;
   created_at: string;
 }
 

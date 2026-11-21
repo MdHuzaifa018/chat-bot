@@ -13,7 +13,7 @@ export class HealthController {
 
       // Lightweight probe to Supabase PostgREST
       try {
-        const probe = await fetch(`${url}/rest/v1/clients?select=id&limit=0`, {
+        const probe = await fetch(`${url}/rest/v1/users?select=id&limit=0`, {
           headers: {
             apikey: serviceRoleKey,
             Authorization: `Bearer ${serviceRoleKey}`,

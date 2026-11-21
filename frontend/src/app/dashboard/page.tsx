@@ -16,7 +16,14 @@ import {
   Bot,
   RefreshCw,
 } from "lucide-react";
-import { fetchWebsites, createWebsite, WebsiteData } from "@/api/saasApi";
+import { fetchWebsites, fetchWebsiteDetails, createWebsite, WebsiteData } from "@/api/saasApi";
+
+interface DashboardMetrics {
+  crawledPages: number;
+  knowledgeDocs: number;
+  totalChats: number;
+  aiResponseRate: string;
+}
 
 export default function DashboardOverview() {
   const [websites, setWebsites] = useState<WebsiteData[]>([]);
@@ -27,6 +34,12 @@ export default function DashboardOverview() {
   const [newName, setNewName] = useState("");
   const [crawlStep, setCrawlStep] = useState<string | null>(null);
   const [crawlError, setCrawlError] = useState<string | null>(null);
+  const [metrics, setMetrics] = useState<DashboardMetrics>({
+    crawledPages: 0,
+    knowledgeDocs: 0,
+    totalChats: 0,
+    aiResponseRate: "—",
+  });
 
   useEffect(() => {
     loadWebsites();
@@ -39,9 +52,34 @@ export default function DashboardOverview() {
       setWebsites(data);
       if (data.length > 0) {
         setSelectedSite(data[0]);
+        await loadMetrics(data[0].id);
       }
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadMetrics(siteId: string) {
+    try {
+      const details = await fetchWebsiteDetails(siteId);
+      if (details) {
+        setMetrics({
+          crawledPages: details.crawledPages?.length || 0,
+          knowledgeDocs: details.knowledgeDocuments?.length || 0,
+          totalChats: 0, // Will be populated from analytics when available
+          aiResponseRate: details.knowledgeDocuments?.length > 0 ? "Active" : "No Data",
+        });
+      }
+    } catch {
+      // Keep defaults
+    }
+  }
+
+  async function handleSiteChange(siteId: string) {
+    const s = websites.find((w) => w.id === siteId);
+    if (s) {
+      setSelectedSite(s);
+      await loadMetrics(siteId);
     }
   }
 
@@ -60,7 +98,7 @@ export default function DashboardOverview() {
       await new Promise((r) => setTimeout(r, 800));
       setCrawlStep("Generating smart suggested questions with Gemini API...");
 
-      const res = await createWebsite(newUrl.trim(), newName.trim() || undefined);
+      await createWebsite(newUrl.trim(), newName.trim() || undefined);
       setCrawlStep("Done!");
 
       await loadWebsites();
@@ -89,10 +127,7 @@ export default function DashboardOverview() {
                 aria-label="Select active website"
                 className="text-xl font-bold text-[#202820] bg-transparent border-none cursor-pointer focus:outline-none"
                 value={selectedSite?.id || ""}
-                onChange={(e) => {
-                  const s = websites.find((w) => w.id === e.target.value);
-                  if (s) setSelectedSite(s);
-                }}
+                onChange={(e) => handleSiteChange(e.target.value)}
               >
                 {websites.map((w) => (
                   <option key={w.id} value={w.id}>
@@ -126,7 +161,7 @@ export default function DashboardOverview() {
             Intelligent Support for <span className="font-semibold text-[#A8C99B]">{selectedSite?.name || "Your Website"}</span>
           </h2>
           <p className="text-[#E5F0E1] text-sm opacity-90 leading-relaxed mb-6">
-            Grounded directly on your crawled pages and custom documentation with zero halluncinations.
+            Grounded directly on your crawled pages and custom documentation with zero hallucinations.
           </p>
           <div className="flex flex-wrap items-center gap-3">
             <Link
@@ -145,7 +180,7 @@ export default function DashboardOverview() {
         </div>
       </div>
 
-      {/* Metrics Grid */}
+      {/* Metrics Grid — Real Data */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         <div className="bg-white p-6 rounded-2xl border border-[#E5F0E1] shadow-sm">
           <div className="flex items-center justify-between mb-3">
@@ -154,9 +189,9 @@ export default function DashboardOverview() {
               <Globe className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl font-bold text-[#202820]">6</div>
+          <div className="text-2xl font-bold text-[#202820]">{metrics.crawledPages}</div>
           <div className="text-xs text-[#254B35] mt-1 flex items-center gap-1">
-            <CheckCircle2 className="w-3.5 h-3.5" /> Fully Indexed
+            <CheckCircle2 className="w-3.5 h-3.5" /> {metrics.crawledPages > 0 ? "Fully Indexed" : "Not Crawled Yet"}
           </div>
         </div>
 
@@ -167,30 +202,30 @@ export default function DashboardOverview() {
               <Database className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl font-bold text-[#202820]">18 chunks</div>
-          <div className="text-xs text-[#647267] mt-1">Full-Text Vector Search</div>
+          <div className="text-2xl font-bold text-[#202820]">{metrics.knowledgeDocs} docs</div>
+          <div className="text-xs text-[#647267] mt-1">Full-Text Search Indexed</div>
         </div>
 
         <div className="bg-white p-6 rounded-2xl border border-[#E5F0E1] shadow-sm">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-semibold text-[#647267] uppercase">AI Response Rate</span>
+            <span className="text-xs font-semibold text-[#647267] uppercase">AI Engine</span>
             <div className="p-2 rounded-xl bg-[#F1F7EF] text-[#254B35]">
               <Bot className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl font-bold text-[#202820]">99.4%</div>
+          <div className="text-2xl font-bold text-[#202820]">{metrics.aiResponseRate}</div>
           <div className="text-xs text-[#254B35] mt-1">Direct Gemini Grounding</div>
         </div>
 
         <div className="bg-white p-6 rounded-2xl border border-[#E5F0E1] shadow-sm">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-semibold text-[#647267] uppercase">Total Chats</span>
+            <span className="text-xs font-semibold text-[#647267] uppercase">Websites</span>
             <div className="p-2 rounded-xl bg-[#F1F7EF] text-[#254B35]">
               <MessageSquare className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl font-bold text-[#202820]">342</div>
-          <div className="text-xs text-[#647267] mt-1">Visitors Assisted</div>
+          <div className="text-2xl font-bold text-[#202820]">{websites.length}</div>
+          <div className="text-xs text-[#647267] mt-1">Configured & Active</div>
         </div>
       </div>
 
@@ -201,69 +236,95 @@ export default function DashboardOverview() {
           <span className="text-xs text-[#647267]">{websites.length} websites total</span>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-[#E5F0E1] text-xs font-semibold text-[#647267] uppercase">
-                <th className="pb-3">Website Name</th>
-                <th className="pb-3">Domain</th>
-                <th className="pb-3">Crawl Status</th>
-                <th className="pb-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#F1F7EF] text-sm">
-              {websites.map((site) => (
-                <tr key={site.id} className="hover:bg-[#F8FAF7] transition-colors">
-                  <td className="py-4 font-semibold text-[#202820] flex items-center gap-2">
-                    <Globe className="w-4 h-4 text-[#254B35]" />
-                    {site.name}
-                  </td>
-                  <td className="py-4 text-[#647267]">
-                    <a
-                      href={site.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="hover:underline flex items-center gap-1"
-                    >
-                      {site.domain} <ExternalLink className="w-3 h-3" />
-                    </a>
-                  </td>
-                  <td className="py-4">
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-[#E8F5E9] text-[#2E7D32]">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#2E7D32]"></span>
-                      Completed
-                    </span>
-                  </td>
-                  <td className="py-4 text-right">
-                    <div className="inline-flex items-center gap-2">
-                      <Link
-                        href="/dashboard/knowledge"
-                        className="p-2 text-[#647267] hover:text-[#254B35] hover:bg-[#F1F7EF] rounded-lg transition-colors"
-                        title="Knowledge Base"
-                      >
-                        <Database className="w-4 h-4" />
-                      </Link>
-                      <Link
-                        href="/dashboard/settings"
-                        className="p-2 text-[#647267] hover:text-[#254B35] hover:bg-[#F1F7EF] rounded-lg transition-colors"
-                        title="Chatbot Theme"
-                      >
-                        <Settings className="w-4 h-4" />
-                      </Link>
-                      <Link
-                        href="/dashboard/embed"
-                        className="p-2 text-[#647267] hover:text-[#254B35] hover:bg-[#F1F7EF] rounded-lg transition-colors"
-                        title="Get Embed Code"
-                      >
-                        <Code className="w-4 h-4" />
-                      </Link>
-                    </div>
-                  </td>
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-6 h-6 animate-spin text-[#254B35]" />
+            <span className="ml-2 text-sm text-[#647267]">Loading websites...</span>
+          </div>
+        ) : websites.length === 0 ? (
+          <div className="text-center py-12">
+            <Globe className="w-12 h-12 text-[#A8C99B] mx-auto mb-3" />
+            <p className="text-sm text-[#647267]">No websites configured yet. Click &quot;Add Website&quot; to get started.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-[#E5F0E1] text-xs font-semibold text-[#647267] uppercase">
+                  <th className="pb-3">Website Name</th>
+                  <th className="pb-3">Domain</th>
+                  <th className="pb-3">Crawl Status</th>
+                  <th className="pb-3 text-right">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-[#F1F7EF] text-sm">
+                {websites.map((site) => (
+                  <tr key={site.id} className="hover:bg-[#F8FAF7] transition-colors">
+                    <td className="py-4 font-semibold text-[#202820] flex items-center gap-2">
+                      <Globe className="w-4 h-4 text-[#254B35]" />
+                      {site.name}
+                    </td>
+                    <td className="py-4 text-[#647267]">
+                      <a
+                        href={site.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="hover:underline flex items-center gap-1"
+                      >
+                        {site.domain} <ExternalLink className="w-3 h-3" />
+                      </a>
+                    </td>
+                    <td className="py-4">
+                      <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium ${
+                        site.crawl_status === "completed" 
+                          ? "bg-[#E8F5E9] text-[#2E7D32]" 
+                          : site.crawl_status === "in_progress"
+                          ? "bg-yellow-50 text-yellow-700"
+                          : site.crawl_status === "failed"
+                          ? "bg-red-50 text-red-700"
+                          : "bg-gray-100 text-gray-600"
+                      }`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${
+                          site.crawl_status === "completed" ? "bg-[#2E7D32]" : 
+                          site.crawl_status === "in_progress" ? "bg-yellow-600 animate-pulse" :
+                          site.crawl_status === "failed" ? "bg-red-600" : "bg-gray-400"
+                        }`}></span>
+                        {site.crawl_status === "completed" ? "Completed" : 
+                         site.crawl_status === "in_progress" ? "Crawling..." :
+                         site.crawl_status === "failed" ? "Failed" : "Idle"}
+                      </span>
+                    </td>
+                    <td className="py-4 text-right">
+                      <div className="inline-flex items-center gap-2">
+                        <Link
+                          href="/dashboard/knowledge"
+                          className="p-2 text-[#647267] hover:text-[#254B35] hover:bg-[#F1F7EF] rounded-lg transition-colors"
+                          title="Knowledge Base"
+                        >
+                          <Database className="w-4 h-4" />
+                        </Link>
+                        <Link
+                          href="/dashboard/settings"
+                          className="p-2 text-[#647267] hover:text-[#254B35] hover:bg-[#F1F7EF] rounded-lg transition-colors"
+                          title="Chatbot Theme"
+                        >
+                          <Settings className="w-4 h-4" />
+                        </Link>
+                        <Link
+                          href="/dashboard/embed"
+                          className="p-2 text-[#647267] hover:text-[#254B35] hover:bg-[#F1F7EF] rounded-lg transition-colors"
+                          title="Get Embed Code"
+                        >
+                          <Code className="w-4 h-4" />
+                        </Link>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Add Website Modal */}
@@ -322,7 +383,7 @@ export default function DashboardOverview() {
               <div className="flex items-center justify-end gap-3 pt-4">
                 <button
                   type="button"
-                  onClick={() => setIsModalOpen(false)}
+                  onClick={() => { setIsModalOpen(false); setCrawlStep(null); setCrawlError(null); }}
                   disabled={Boolean(crawlStep)}
                   className="px-5 py-2.5 rounded-full border border-[#CBD5E1] text-sm font-semibold text-[#647267] hover:bg-gray-50"
                 >

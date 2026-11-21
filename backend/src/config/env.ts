@@ -64,7 +64,7 @@ export function loadEnv(): AppEnv {
 
   // Google Gemini API Configuration (Direct SDK)
   const geminiApiKey = process.env.GEMINI_API_KEY?.trim() ?? "";
-  const geminiModel = process.env.GEMINI_MODEL?.trim() || "gemini-3.5-flash-lite";
+  const geminiModel = process.env.GEMINI_MODEL?.trim() || "gemini-3.8-flash";
   const geminiTimeoutMs = Number.parseInt(process.env.GEMINI_TIMEOUT_MS ?? "30000", 10);
   const geminiMaxOutputTokens = Number.parseInt(process.env.GEMINI_MAX_OUTPUT_TOKENS ?? "1024", 10);
 

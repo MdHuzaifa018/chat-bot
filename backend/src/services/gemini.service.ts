@@ -88,13 +88,14 @@ Rules:
 
     const prompt = `${contextText}${historyText}\n\nVisitor Question: ${userMessage}\n\nAssistant Response:`;
 
-    // Prioritized fast and resilient models
+    // Prioritized fast and resilient models with auto-failover
     const modelsToTry = Array.from(
       new Set([
-        env.gemini.model || "gemini-3.5-flash-lite",
+        env.gemini.model || "gemini-3.5-flash",
+        "gemini-3.5-flash",
         "gemini-3.5-flash-lite",
-        "gemini-3.8-flash",
         "gemini-3.6-flash",
+        "gemini-3.8-flash",
       ])
     );
 
@@ -152,7 +153,7 @@ ${contentSummaries.slice(0, 3).join("\n\n")}`;
 
     try {
       const response = await ai.models.generateContent({
-        model: env.gemini.model || "gemini-3.5-flash-lite",
+        model: env.gemini.model || "gemini-3.8-flash",
         contents: prompt,
         config: {
           responseMimeType: "application/json",
