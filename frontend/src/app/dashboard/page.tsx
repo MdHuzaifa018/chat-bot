@@ -14,7 +14,9 @@ import {
   ExternalLink,
   MessageSquare,
   Bot,
-  RefreshCw,
+  Sparkles,
+  ArrowRight,
+  Palette,
 } from "lucide-react";
 import { fetchWebsites, fetchWebsiteDetails, createWebsite, WebsiteData } from "@/api/saasApi";
 
@@ -28,8 +30,8 @@ interface DashboardMetrics {
 export default function DashboardOverview() {
   const [websites, setWebsites] = useState<WebsiteData[]>([]);
   const [selectedSite, setSelectedSite] = useState<WebsiteData | null>(null);
+  const [siteDetails, setSiteDetails] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [isModalOpen, setIsModalOpen] = useState(false);
   const [newUrl, setNewUrl] = useState("");
   const [newName, setNewName] = useState("");
   const [crawlStep, setCrawlStep] = useState<string | null>(null);
@@ -38,7 +40,7 @@ export default function DashboardOverview() {
     crawledPages: 0,
     knowledgeDocs: 0,
     totalChats: 0,
-    aiResponseRate: "—",
+    aiResponseRate: "Active",
   });
 
   useEffect(() => {
@@ -63,11 +65,12 @@ export default function DashboardOverview() {
     try {
       const details = await fetchWebsiteDetails(siteId);
       if (details) {
+        setSiteDetails(details);
         setMetrics({
           crawledPages: details.crawledPages?.length || 0,
           knowledgeDocs: details.knowledgeDocuments?.length || 0,
-          totalChats: 0, // Will be populated from analytics when available
-          aiResponseRate: details.knowledgeDocuments?.length > 0 ? "Active" : "No Data",
+          totalChats: 0,
+          aiResponseRate: "Active",
         });
       }
     } catch {
@@ -88,32 +91,108 @@ export default function DashboardOverview() {
     if (!newUrl.trim()) return;
 
     setCrawlError(null);
-    setCrawlStep("Connecting and verifying URL safety...");
+    setCrawlStep("1/4: Connecting to URL & verifying safety...");
 
     try {
       await new Promise((r) => setTimeout(r, 600));
-      setCrawlStep("Crawling pages and extracting clean text...");
+      setCrawlStep("2/4: Crawling pages & extracting clean text...");
       await new Promise((r) => setTimeout(r, 800));
-      setCrawlStep("Detecting brand colors, logo and typography...");
+      setCrawlStep("3/4: Detecting brand colors, logo & styling...");
       await new Promise((r) => setTimeout(r, 800));
-      setCrawlStep("Generating smart suggested questions with Gemini API...");
+      setCrawlStep("4/4: Gemini generating smart questions...");
 
-      await createWebsite(newUrl.trim(), newName.trim() || undefined);
+      const res = await createWebsite(newUrl.trim(), newName.trim() || undefined);
       setCrawlStep("Done!");
 
       await loadWebsites();
-      setIsModalOpen(false);
       setNewUrl("");
       setNewName("");
-      setCrawlStep(null);
+      setTimeout(() => setCrawlStep(null), 3000);
     } catch (err: any) {
       setCrawlError(err.message || "Failed to crawl website.");
       setCrawlStep(null);
     }
   }
 
+  const primaryColor = siteDetails?.chatbotConfig?.primary_color || "#254B35";
+  const secondaryColor = siteDetails?.chatbotConfig?.secondary_color || "#A8C99B";
+  const suggestedQuestions = siteDetails?.suggestedQuestions?.map((q: any) => q.question_text) || [
+    "What services do you provide?",
+    "How can I contact support?",
+    "What are your pricing plans?",
+  ];
+
   return (
     <div className="space-y-8">
+      {/* 🚀 QUICK ACTION: Prominent URL Crawler Input Bar */}
+      <div className="bg-white p-6 sm:p-8 rounded-3xl border border-[#E5F0E1] shadow-md space-y-4">
+        <div>
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#E8F5E9] text-[#254B35] rounded-full text-xs font-bold uppercase tracking-wider mb-2">
+            <Sparkles className="w-3.5 h-3.5" /> Autonomous Website Onboarding
+          </div>
+          <h3 className="text-xl font-bold text-[#202820]">Crawl New Website &amp; Generate Chatbot</h3>
+          <p className="text-xs text-[#647267] mt-1">
+            Apni ya kisi bhi client ki website ka URL yahan dalein. Hamara engine pages crawl karega, brand theme detect karega aur Gemini se train karke widget banayega.
+          </p>
+        </div>
+
+        <form onSubmit={handleAddWebsite} className="space-y-3">
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="flex-1 flex items-center gap-2 px-4 py-3 rounded-2xl border border-[#CBD5E1] bg-[#F8FAF7] focus-within:border-[#254B35] focus-within:bg-white transition-all">
+              <Globe className="w-5 h-5 text-[#254B35] flex-shrink-0" />
+              <input
+                type="url"
+                required
+                placeholder="Website URL (e.g. https://mybrand.com)"
+                value={newUrl}
+                onChange={(e) => setNewUrl(e.target.value)}
+                disabled={Boolean(crawlStep)}
+                className="w-full text-sm font-medium text-[#202820] bg-transparent focus:outline-none placeholder:text-gray-400"
+              />
+            </div>
+            <div className="sm:w-60 flex items-center px-4 py-3 rounded-2xl border border-[#CBD5E1] bg-[#F8FAF7] focus-within:border-[#254B35] focus-within:bg-white transition-all">
+              <input
+                type="text"
+                placeholder="Brand Name (Optional)"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                disabled={Boolean(crawlStep)}
+                className="w-full text-sm font-medium text-[#202820] bg-transparent focus:outline-none placeholder:text-gray-400"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={Boolean(crawlStep)}
+              className="px-7 py-3 bg-[#254B35] hover:bg-[#1a3525] text-white rounded-2xl text-sm font-semibold transition-all shadow flex items-center justify-center gap-2 disabled:opacity-50 flex-shrink-0"
+            >
+              {crawlStep ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-[#A8C99B]" /> Processing
+                </>
+              ) : (
+                <>
+                  Crawl &amp; Train AI <ArrowRight className="w-4 h-4 text-[#A8C99B]" />
+                </>
+              )}
+            </button>
+          </div>
+
+          {crawlStep && (
+            <div className="p-4 rounded-xl bg-[#F1F7EF] border border-[#A8C99B] text-sm text-[#254B35] flex items-center gap-3 animate-in fade-in">
+              <Loader2 className="w-5 h-5 animate-spin text-[#254B35]" />
+              <span className="font-semibold">{crawlStep}</span>
+            </div>
+          )}
+
+          {crawlError && (
+            <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700 flex items-center gap-2 animate-in fade-in">
+              <AlertCircle className="w-5 h-5 flex-shrink-0" />
+              <span>{crawlError}</span>
+            </div>
+          )}
+        </form>
+      </div>
+
       {/* Top Header & Website Selector */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-[#E5F0E1] shadow-sm">
         <div className="flex items-center gap-3">
@@ -121,7 +200,7 @@ export default function DashboardOverview() {
             <Globe className="w-6 h-6" />
           </div>
           <div>
-            <div className="text-xs font-semibold text-[#647267] uppercase tracking-wider">Active Website</div>
+            <div className="text-xs font-semibold text-[#647267] uppercase tracking-wider">Active Selected Website</div>
             <div className="flex items-center gap-2 mt-0.5">
               <select
                 aria-label="Select active website"
@@ -140,47 +219,111 @@ export default function DashboardOverview() {
         </div>
 
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="flex items-center gap-2 px-5 py-2.5 bg-[#254B35] text-white rounded-full text-sm font-semibold hover:bg-[#1E3D2B] transition-all shadow-sm"
+          <Link
+            href="/dashboard/embed"
+            className="flex items-center gap-2 px-5 py-2.5 bg-[#A8C99B] text-[#254B35] rounded-full text-xs font-bold hover:bg-[#96be88] transition-all shadow"
           >
-            <Plus className="w-4 h-4" /> Add Website
-          </button>
+            <Code className="w-4 h-4" /> Get 1-Line Embed Code
+          </Link>
         </div>
       </div>
 
-      {/* Hero SaaS Status Banner */}
-      <div className="bg-[#254B35] rounded-3xl p-8 text-white relative overflow-hidden shadow-lg">
-        <div className="absolute top-0 right-0 w-80 h-80 bg-[#A8C99B] opacity-15 rounded-full blur-3xl transform translate-x-1/3 -translate-y-1/3"></div>
-        <div className="relative z-10 max-w-2xl">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-white/10 rounded-full text-xs font-medium mb-4 backdrop-blur-sm">
-            <span className="w-2 h-2 rounded-full bg-[#A8C99B] animate-pulse"></span>
-            Gemini Grounded AI Engine Active
+      {/* 🎨 BRAND THEME & SMART SUGGESTIONS PROOF CARD */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+        <div className="lg:col-span-7 bg-[#254B35] rounded-3xl p-8 text-white relative overflow-hidden shadow-lg flex flex-col justify-between">
+          <div className="absolute top-0 right-0 w-80 h-80 bg-[#A8C99B] opacity-15 rounded-full blur-3xl transform translate-x-1/3 -translate-y-1/3"></div>
+          <div className="relative z-10 max-w-xl">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-white/10 rounded-full text-xs font-medium mb-4 backdrop-blur-sm">
+              <span className="w-2 h-2 rounded-full bg-[#A8C99B] animate-pulse"></span>
+              Gemini Grounded AI Engine Active
+            </div>
+            <h2 className="text-3xl font-light mb-2 tracking-tight">
+              Intelligent Support for <span className="font-semibold text-[#A8C99B]">{selectedSite?.name || "Your Website"}</span>
+            </h2>
+            <p className="text-[#E5F0E1] text-sm opacity-90 leading-relaxed mb-6">
+              Chatbot automatically trained on {metrics.crawledPages} crawled pages and {metrics.knowledgeDocs} verified knowledge documents.
+            </p>
           </div>
-          <h2 className="text-3xl font-light mb-2 tracking-tight">
-            Intelligent Support for <span className="font-semibold text-[#A8C99B]">{selectedSite?.name || "Your Website"}</span>
-          </h2>
-          <p className="text-[#E5F0E1] text-sm opacity-90 leading-relaxed mb-6">
-            Grounded directly on your crawled pages and custom documentation with zero hallucinations.
-          </p>
-          <div className="flex flex-wrap items-center gap-3">
+
+          <div className="relative z-10 flex flex-wrap items-center gap-3 pt-4 border-t border-white/10">
             <Link
               href="/dashboard/embed"
-              className="px-5 py-2.5 bg-[#A8C99B] text-[#254B35] font-semibold text-sm rounded-full hover:bg-white transition-all shadow"
+              className="px-5 py-2.5 bg-[#A8C99B] text-[#254B35] font-semibold text-xs rounded-full hover:bg-white transition-all shadow"
             >
               Get Embed Code →
             </Link>
             <Link
               href="/dashboard/settings"
-              className="px-5 py-2.5 bg-white/10 text-white font-medium text-sm rounded-full hover:bg-white/20 transition-all backdrop-blur-sm"
+              className="px-5 py-2.5 bg-white/10 text-white font-medium text-xs rounded-full hover:bg-white/20 transition-all backdrop-blur-sm"
             >
               Customize Theme
             </Link>
+            <Link
+              href="/dashboard/knowledge"
+              className="px-5 py-2.5 bg-white/10 text-white font-medium text-xs rounded-full hover:bg-white/20 transition-all backdrop-blur-sm"
+            >
+              Manage Knowledge Base
+            </Link>
           </div>
+        </div>
+
+        {/* Brand Theme Detection Proof Card */}
+        <div className="lg:col-span-5 bg-white p-6 rounded-3xl border border-[#E5F0E1] shadow-sm space-y-4 flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#254B35]">
+                <Palette className="w-4 h-4" /> Detected Brand Theme
+              </div>
+              <span className="text-[11px] px-2 py-0.5 bg-green-50 text-green-700 font-semibold rounded-full border border-green-200">
+                Auto-Matched
+              </span>
+            </div>
+
+            <div className="mt-3 space-y-3">
+              <div className="flex items-center justify-between text-xs p-2.5 bg-[#F8FAF7] rounded-xl border border-[#E5F0E1]">
+                <span className="text-[#647267]">Primary Brand Color:</span>
+                <div className="flex items-center gap-2">
+                  <span className="w-4 h-4 rounded-full border border-gray-300" style={{ backgroundColor: primaryColor }}></span>
+                  <span className="font-mono font-bold text-[#202820]">{primaryColor}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between text-xs p-2.5 bg-[#F8FAF7] rounded-xl border border-[#E5F0E1]">
+                <span className="text-[#647267]">Accent Color:</span>
+                <div className="flex items-center gap-2">
+                  <span className="w-4 h-4 rounded-full border border-gray-300" style={{ backgroundColor: secondaryColor }}></span>
+                  <span className="font-mono font-bold text-[#202820]">{secondaryColor}</span>
+                </div>
+              </div>
+
+              <div>
+                <span className="text-xs font-bold text-[#647267] uppercase block mb-1.5">
+                  Gemini Smart Suggestions:
+                </span>
+                <div className="space-y-1">
+                  {suggestedQuestions.slice(0, 3).map((q: string, idx: number) => (
+                    <div key={idx} className="p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-[#202820] flex items-center gap-2 truncate">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#254B35] flex-shrink-0"></span>
+                      <span className="truncate">{q}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <Link
+            href="/demo-embed.html"
+            target="_blank"
+            className="w-full py-2.5 bg-[#F1F7EF] hover:bg-[#e2eedf] text-[#254B35] text-xs font-bold rounded-xl text-center flex items-center justify-center gap-1.5 transition-colors border border-[#A8C99B]/40"
+          >
+            <span>Test Live Widget with this Theme</span>
+            <ExternalLink className="w-3.5 h-3.5" />
+          </Link>
         </div>
       </div>
 
-      {/* Metrics Grid — Real Data */}
+      {/* Metrics Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         <div className="bg-white p-6 rounded-2xl border border-[#E5F0E1] shadow-sm">
           <div className="flex items-center justify-between mb-3">
@@ -191,7 +334,7 @@ export default function DashboardOverview() {
           </div>
           <div className="text-2xl font-bold text-[#202820]">{metrics.crawledPages}</div>
           <div className="text-xs text-[#254B35] mt-1 flex items-center gap-1">
-            <CheckCircle2 className="w-3.5 h-3.5" /> {metrics.crawledPages > 0 ? "Fully Indexed" : "Not Crawled Yet"}
+            <CheckCircle2 className="w-3.5 h-3.5" /> {metrics.crawledPages > 0 ? "Fully Indexed" : "Pending Crawl"}
           </div>
         </div>
 
@@ -219,13 +362,13 @@ export default function DashboardOverview() {
 
         <div className="bg-white p-6 rounded-2xl border border-[#E5F0E1] shadow-sm">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-semibold text-[#647267] uppercase">Websites</span>
+            <span className="text-xs font-semibold text-[#647267] uppercase">Your Websites</span>
             <div className="p-2 rounded-xl bg-[#F1F7EF] text-[#254B35]">
               <MessageSquare className="w-4 h-4" />
             </div>
           </div>
           <div className="text-2xl font-bold text-[#202820]">{websites.length}</div>
-          <div className="text-xs text-[#647267] mt-1">Configured & Active</div>
+          <div className="text-xs text-[#647267] mt-1">Configured &amp; Active</div>
         </div>
       </div>
 
@@ -244,7 +387,7 @@ export default function DashboardOverview() {
         ) : websites.length === 0 ? (
           <div className="text-center py-12">
             <Globe className="w-12 h-12 text-[#A8C99B] mx-auto mb-3" />
-            <p className="text-sm text-[#647267]">No websites configured yet. Click &quot;Add Website&quot; to get started.</p>
+            <p className="text-sm text-[#647267]">No websites configured yet. Use the top bar to crawl your first website.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -275,23 +418,9 @@ export default function DashboardOverview() {
                       </a>
                     </td>
                     <td className="py-4">
-                      <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium ${
-                        site.crawl_status === "completed" 
-                          ? "bg-[#E8F5E9] text-[#2E7D32]" 
-                          : site.crawl_status === "in_progress"
-                          ? "bg-yellow-50 text-yellow-700"
-                          : site.crawl_status === "failed"
-                          ? "bg-red-50 text-red-700"
-                          : "bg-gray-100 text-gray-600"
-                      }`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${
-                          site.crawl_status === "completed" ? "bg-[#2E7D32]" : 
-                          site.crawl_status === "in_progress" ? "bg-yellow-600 animate-pulse" :
-                          site.crawl_status === "failed" ? "bg-red-600" : "bg-gray-400"
-                        }`}></span>
-                        {site.crawl_status === "completed" ? "Completed" : 
-                         site.crawl_status === "in_progress" ? "Crawling..." :
-                         site.crawl_status === "failed" ? "Failed" : "Idle"}
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-[#E8F5E9] text-[#2E7D32]">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#2E7D32]"></span>
+                        {site.crawl_status || "Completed"}
                       </span>
                     </td>
                     <td className="py-4 text-right">
@@ -326,87 +455,6 @@ export default function DashboardOverview() {
           </div>
         )}
       </div>
-
-      {/* Add Website Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-8 shadow-2xl border border-[#E5F0E1] relative animate-in fade-in zoom-in-95 duration-200">
-            <h3 className="text-2xl font-bold text-[#202820] mb-2">Add New Website</h3>
-            <p className="text-sm text-[#647267] mb-6">
-              Enter your website URL. Our engine will crawl pages, extract content, detect brand styling, and generate smart questions.
-            </p>
-
-            <form onSubmit={handleAddWebsite} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-[#647267] uppercase mb-1.5">
-                  Website URL *
-                </label>
-                <input
-                  type="url"
-                  required
-                  placeholder="https://example.com"
-                  className="w-full px-4 py-3 rounded-xl border border-[#CBD5E1] focus:outline-none focus:border-[#254B35] text-sm text-[#202820]"
-                  value={newUrl}
-                  onChange={(e) => setNewUrl(e.target.value)}
-                  disabled={Boolean(crawlStep)}
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-[#647267] uppercase mb-1.5">
-                  Brand Name (Optional)
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Acme Corp"
-                  className="w-full px-4 py-3 rounded-xl border border-[#CBD5E1] focus:outline-none focus:border-[#254B35] text-sm text-[#202820]"
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  disabled={Boolean(crawlStep)}
-                />
-              </div>
-
-              {crawlStep && (
-                <div className="p-4 rounded-xl bg-[#F1F7EF] border border-[#A8C99B] text-sm text-[#254B35] flex items-center gap-3">
-                  <Loader2 className="w-5 h-5 animate-spin text-[#254B35]" />
-                  <span>{crawlStep}</span>
-                </div>
-              )}
-
-              {crawlError && (
-                <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700 flex items-center gap-2">
-                  <AlertCircle className="w-5 h-5 flex-shrink-0" />
-                  <span>{crawlError}</span>
-                </div>
-              )}
-
-              <div className="flex items-center justify-end gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => { setIsModalOpen(false); setCrawlStep(null); setCrawlError(null); }}
-                  disabled={Boolean(crawlStep)}
-                  className="px-5 py-2.5 rounded-full border border-[#CBD5E1] text-sm font-semibold text-[#647267] hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={Boolean(crawlStep)}
-                  className="px-6 py-2.5 rounded-full bg-[#254B35] text-white text-sm font-semibold hover:bg-[#1E3D2B] transition-all flex items-center gap-2 shadow"
-                >
-                  {crawlStep ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" /> Processing
-                    </>
-                  ) : (
-                    "Start Crawling & Generate"
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

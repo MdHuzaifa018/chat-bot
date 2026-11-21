@@ -6,6 +6,7 @@ import { configRouter } from "./config.routes.js";
 import { authRouter } from "./auth.routes.js";
 import { websiteRouter } from "./website.routes.js";
 import { widgetRouter } from "./widget.routes.js";
+import { adminRouter } from "./admin.routes.js";
 
 export const apiRouter = Router();
 
@@ -16,3 +17,4 @@ apiRouter.use("/config", configRouter);
 apiRouter.use("/auth", authRouter);
 apiRouter.use("/websites", websiteRouter);
 apiRouter.use("/widget", widgetRouter);
+apiRouter.use("/admin", adminRouter);

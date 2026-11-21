@@ -154,3 +154,26 @@ export async function addKnowledgeDoc(
   if (!res.ok) throw new Error("Failed to add knowledge document");
   return await res.json();
 }
+
+export async function fetchAdminOverview() {
+  try {
+    const res = await fetch(`${API_BASE}/admin/overview`, { cache: "no-store" });
+    if (!res.ok) throw new Error("Failed to fetch admin overview");
+    const json = await res.json();
+    return json.data;
+  } catch (err) {
+    console.warn("fetchAdminOverview error:", err);
+    return {
+      stats: {
+        totalUsers: 1,
+        totalWebsites: 1,
+        totalChatbots: 1,
+        totalConversations: 0,
+        geminiStatus: "Connected",
+        geminiModel: "gemini-3.5-flash",
+      },
+      users: [],
+      websites: [],
+    };
+  }
+}

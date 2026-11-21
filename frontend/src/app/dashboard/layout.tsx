@@ -49,6 +49,12 @@ export default function DashboardLayout({
             <Code className="w-5 h-5" />
             Embed Code
           </Link>
+          <div className="pt-2">
+            <Link href="/dashboard/admin" className="flex items-center gap-3 px-4 py-3 bg-[#E8F5E9] text-[#254B35] hover:bg-[#d8edd6] rounded-xl font-semibold transition-colors border border-[#A8C99B]">
+              <span className="text-base">👑</span>
+              <span>Super Admin</span>
+            </Link>
+          </div>
         </nav>
 
         <div className="p-4 border-t border-[#E5F0E1] space-y-2">
