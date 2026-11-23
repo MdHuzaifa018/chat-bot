@@ -47,7 +47,7 @@ export class WebsiteService {
     }
 
     const detectedTheme: DetectedTheme = homepageHtml
-      ? ThemeDetectorService.extractTheme(homepageHtml, safeUrl)
+      ? await ThemeDetectorService.extractTheme(homepageHtml, safeUrl)
       : {
           primaryColor: "#254B35",
           secondaryColor: "#3B82F6",
