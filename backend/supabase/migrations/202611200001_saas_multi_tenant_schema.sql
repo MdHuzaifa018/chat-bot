@@ -20,6 +20,11 @@ create table if not exists public.users (
   created_at timestamptz not null default now()
 );
 
+-- Keep this migration compatible with the earlier account table shape.
+alter table public.users add column if not exists name text;
+alter table public.users add column if not exists role text not null default 'owner';
+alter table public.users alter column clerk_user_id drop not null;
+
 -- 2. Websites / Tenants
 create table if not exists public.websites (
   id uuid primary key default gen_random_uuid(),
@@ -58,12 +63,27 @@ create table if not exists public.knowledge_documents (
   id uuid primary key default gen_random_uuid(),
   website_id uuid not null references public.websites(id) on delete cascade,
   title text not null,
+  slug text not null unique,
+  category text not null default 'general',
+  is_published boolean not null default true,
   source_type text not null default 'crawled_page' check (source_type in ('crawled_page', 'manual_doc', 'faq')),
   source_url text,
   content text not null,
   fts tsvector generated always as (to_tsvector('english', coalesce(title, '') || ' ' || coalesce(content, ''))) stored,
   created_at timestamptz not null default now()
 );
+
+-- The Nov 18 migration created a global knowledge_documents table first.
+-- Add the SaaS columns in place so chronological fresh installs remain valid.
+alter table public.knowledge_documents add column if not exists website_id uuid references public.websites(id) on delete cascade;
+alter table public.knowledge_documents add column if not exists slug text;
+alter table public.knowledge_documents add column if not exists category text not null default 'general';
+alter table public.knowledge_documents add column if not exists is_published boolean not null default true;
+alter table public.knowledge_documents add column if not exists source_type text not null default 'crawled_page';
+alter table public.knowledge_documents add column if not exists source_url text;
+alter table public.knowledge_documents add column if not exists content text not null default '';
+alter table public.knowledge_documents add column if not exists fts tsvector generated always as (to_tsvector('english', coalesce(title, '') || ' ' || coalesce(content, ''))) stored;
+create unique index if not exists idx_knowledge_docs_slug on public.knowledge_documents(slug) where slug is not null;
 
 create index if not exists idx_knowledge_docs_website on public.knowledge_documents(website_id);
 create index if not exists idx_knowledge_docs_fts on public.knowledge_documents using gin(fts);
@@ -97,6 +117,7 @@ create table if not exists public.suggested_questions (
   id uuid primary key default gen_random_uuid(),
   website_id uuid not null references public.websites(id) on delete cascade,
   question_text text not null check (length(btrim(question_text)) > 0),
+  answer text,
   display_order integer not null default 0,
   is_active boolean not null default true,
   created_at timestamptz not null default now()
@@ -206,6 +227,9 @@ begin
   limit coalesce(p_limit, 5);
 end;
 $$;
+
+revoke all on function public.match_website_knowledge(uuid, text, integer) from public, anon, authenticated;
+grant execute on function public.match_website_knowledge(uuid, text, integer) to service_role;
 
 -- 12. Security & Row-Level Security (RLS) Configuration
 alter table public.users enable row level security;

@@ -15,11 +15,13 @@ create table if not exists public.companies (
 -- 2. DASHBOARD USERS (Mapped to Clerk User ID)
 create table if not exists public.users (
   id uuid primary key default gen_random_uuid(),
-  clerk_user_id text not null unique,
+  clerk_user_id text unique,
   email text not null unique,
+  name text,
   first_name text,
   last_name text,
   avatar_url text,
+  role text not null default 'owner',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

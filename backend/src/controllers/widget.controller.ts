@@ -9,7 +9,7 @@ export class WidgetController {
   static async getConfig(req: Request, res: Response, next: NextFunction) {
     try {
       const publicId = String(req.params.publicId);
-      const data = await WidgetService.getPublicConfig(publicId);
+      const data = await WidgetService.getPublicConfig(publicId, req.get("origin"));
       res.status(200).json({ data });
     } catch (err) {
       next(err);
@@ -24,7 +24,7 @@ export class WidgetController {
     try {
       const publicId = String(req.params.publicId);
       const { visitorId } = req.body;
-      const session = await WidgetService.startVisitorSession(publicId, visitorId);
+      const session = await WidgetService.startVisitorSession(publicId, visitorId, req.get("origin"));
       res.status(200).json({ data: session });
     } catch (err) {
       next(err);
@@ -38,11 +38,13 @@ export class WidgetController {
   static async sendMessage(req: Request, res: Response, next: NextFunction) {
     try {
       const publicId = String(req.params.publicId);
-      const { message, conversationId } = req.body;
+      const { message, conversationId, sessionToken } = req.body;
       const result = await WidgetService.handleVisitorMessage({
         publicChatbotId: publicId,
         message,
         conversationId,
+        sessionToken,
+        origin: req.get("origin"),
       });
       res.status(200).json({ data: result });
     } catch (err) {

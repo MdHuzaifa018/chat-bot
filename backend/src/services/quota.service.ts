@@ -54,16 +54,11 @@ export class QuotaService {
       if (err instanceof ApiError && err.status === 429) {
         throw err;
       }
-      // If RPC is not yet applied, fallback to local tracking gracefully
-      console.warn("Could not reach consume_student_daily_quota RPC, applying fail-safe", err);
+      console.error("Could not reach consume_student_daily_quota RPC", err);
+      throw new ApiError(503, "QUOTA_SERVICE_UNAVAILABLE", "Chat quota service is temporarily unavailable.");
     }
 
-    return {
-      allowed: true,
-      currentCount: 1,
-      maxLimit: dailyLimit,
-      remaining: dailyLimit - 1,
-    };
+    throw new ApiError(503, "QUOTA_SERVICE_UNAVAILABLE", "Chat quota service is temporarily unavailable.");
   }
 
   /**

@@ -1,69 +1,37 @@
-# 🤖 AI-Powered Client Support Chatbot
+# SupportAI Website Chatbot
 
-An enterprise-ready, AI-powered customer support chatbot built with **Next.js**, **Node.js Express (TypeScript)**, **Supabase PostgreSQL (RLS)**, and **Dify AI Workflow (Google Gemini)**.
+SupportAI has a Next.js client/admin portal, an Express TypeScript API, Supabase Postgres for persistent accounts and chatbot data, and Google Gemini for website-grounded replies. Authentication is implemented by this backend using HttpOnly sessions; Clerk is not part of the runtime.
 
----
+## Repository
 
-## 📖 Complete Documentation & Setup Guides
+- `frontend/` — client login and website setup, embed snippet, admin overview, access requests, and team permissions.
+- `backend/` — API routes, account sessions, crawler, Gemini service, widget, and Supabase adapter.
+- `backend/supabase/migrations/` — database migrations, including account authentication and client/website ownership.
 
-- 👉 **[FULL_SETUP_AND_TESTING_GUIDE.md](FULL_SETUP_AND_TESTING_GUIDE.md)**: **Scratch se End tak full setup guide** (Kahan se Supabase/Dify keys lein, `.env.local` kaise banayein, SQL migration kaise run karein, aur frontend-backend kaise test karein).
-- 👉 **[GIT_TEAM_WORKFLOW_GUIDE.md](GIT_TEAM_WORKFLOW_GUIDE.md)**: Team Git collaboration guide (Branching, PRs, aur conflict-free workflow).
-- 👉 **[docs/](docs/)**: Official Architecture, PRD, TRD, Web Flow, and Database Schema specifications.
+## Local setup
 
----
+1. Create a Supabase project and apply every SQL migration in `backend/supabase/migrations/` in filename order.
+2. Copy `backend/.env.example` to `backend/.env.local`. Set `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and an initial `BOOTSTRAP_ADMIN_EMAIL` plus `BOOTSTRAP_ADMIN_PASSWORD` (12+ characters). Add `GEMINI_API_KEY` for generated responses.
+3. Copy `frontend/.env.example` to `frontend/.env.local`. Set `NEXT_PUBLIC_API_URL` to the backend API base, normally `http://localhost:5000/api`.
+4. Start each app in its own terminal:
 
-## 📁 Repository Structure
+   ```bash
+   cd backend && npm install && npm run dev
+   cd frontend && npm install && npm run dev
+   ```
 
-```text
-chat-bot/
-├── frontend/                  # 🎨 Next.js + React + Tailwind CSS Frontend
-│   ├── src/components/        # ChatbotWidget, ChatWindow, MessageList
-│   ├── src/api/chatbotApi.js  # API client communicating with backend
-│   └── package.json           # Next.js dependencies
-│
-├── backend/                   # ⚙️ Node.js + Express.js REST API (TypeScript)
-│   ├── src/                   # Controllers, Services, Middlewares, Routes
-│   ├── supabase/migrations/   # PostgreSQL Schema, RLS Policies, Rate Limiting RPC
-│   ├── .env.example           # Environment variables template
-│   └── package.json           # Express dependencies
-│
-├── docs/                      # 📚 Official Architecture & Planning Docs
-│   ├── 01-PRD.md              # Product Requirements Document
-│   ├── 02-TRD.md              # Technical Requirements Document
-│   ├── 03-WEB-FLOW.md         # User Navigation & State Logic
-│   ├── 04-UI-UX-DESIGN.md     # Design Tokens & Guidelines
-│   ├── 05-BACKEND-SCHEMA.md   # Database Schema & Security
-│   └── 06-IMPLEMENTATION.md   # Step-by-Step Delivery Plan
-│
-├── FULL_SETUP_AND_TESTING_GUIDE.md # 📘 Step-by-Step Scratch to Live Testing Guide
-├── GIT_TEAM_WORKFLOW_GUIDE.md      # 🤝 Team Git & GitHub Collaboration Guide
-└── README.md                       # This overview file
-```
+The first backend start creates the administrator from the bootstrap variables if no admin account exists. Once created, remove those bootstrap values. Clients submit an access request; an administrator reviews it and gets a one-time username/access-code result to share with the client.
 
----
+For a frontend and backend on different sites, configure `ALLOWED_ORIGIN` and set `SESSION_COOKIE_SAME_SITE=none` over HTTPS so the browser can send the HttpOnly session cookie.
 
-## 🚀 Quick Start (Local Development)
+## Main flows
 
-### 1. Run Backend Server (Port 5000)
-```bash
-cd backend
-npm install
-npm run dev
-```
+- Client access request: `POST /api/auth/client/request-access`
+- Client sign-in: `POST /api/auth/client/login` with username and access code
+- Admin sign-in: `POST /api/auth/admin/login` with email and password
+- Current session / sign-out: `GET /api/auth/me`, `POST /api/auth/logout`
+- Website operations: authenticated `/api/websites` endpoints
+- Admin requests and team: permission-protected `/api/admin` endpoints
+- Public embed chat: origin-checked `/api/widget/:publicId/*` endpoints and `/widget.js`
 
-### 2. Run Frontend Website (Port 3000)
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
----
-
-## 🧪 Testing Checklist
-- [x] Backend Health: `GET http://localhost:5000/api/health`
-- [x] Session & Lead Capture: `POST http://localhost:5000/api/session/start`
-- [x] AI Message Response: `POST http://localhost:5000/api/chat/message`
-- [x] Conversation History: `GET http://localhost:5000/api/chat/history`
-- [x] Token Bucket Rate Limiting (20 req / 60s)
-- [x] Frontend Chat Widget UI & Lead Capture Flow
+The browser does not store account credentials, access codes, or chatbot settings in localStorage. Dashboard data is read and written through the backend.

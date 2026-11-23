@@ -27,7 +27,7 @@ const IN_MEMORY_INSTITUTIONAL_DOCS = [
     category: "access",
     keywords: ["login", "portal", "account", "access", "signin", "password"],
     content:
-      "Clients can access the administrative dashboard at https://app.curiousrabit.com using Clerk-authenticated email or Google SSO. Public visitors do not require login; they receive instant frictionless guest chat sessions.",
+      "Clients sign in to the SupportAI portal with their assigned username and access code. Public visitors can use embedded chat without creating an account.",
   },
   {
     title: "Chatbot Usage Limits & Quota",

@@ -22,11 +22,9 @@ export interface AppEnv {
     dailyMessageLimit: number;
     maxMessageLength: number;
   };
-  clerk: {
-    secretKey: string;
-    publishableKey: string;
-    webhookSecret: string;
-    isConfigured: boolean;
+  bootstrapAdmin: {
+    email: string;
+    password: string;
   };
   security: {
     allowedOrigin: string;
@@ -72,10 +70,8 @@ export function loadEnv(): AppEnv {
   const dailyMessageLimit = Number.parseInt(process.env.DAILY_MESSAGE_LIMIT ?? "8", 10);
   const maxMessageLength = Number.parseInt(process.env.MAX_MESSAGE_LENGTH ?? "400", 10);
 
-  // Clerk Dashboard Authentication Configuration
-  const clerkSecretKey = process.env.CLERK_SECRET_KEY?.trim() ?? "";
-  const clerkPublishableKey = process.env.CLERK_PUBLISHABLE_KEY?.trim() ?? "";
-  const clerkWebhookSecret = process.env.CLERK_WEBHOOK_SECRET?.trim() ?? "";
+  const bootstrapAdminEmail = process.env.BOOTSTRAP_ADMIN_EMAIL?.trim().toLowerCase() ?? "";
+  const bootstrapAdminPassword = process.env.BOOTSTRAP_ADMIN_PASSWORD?.trim() ?? "";
 
   // Rate Limiting & CORS
   const allowedOrigin = process.env.ALLOWED_ORIGIN?.trim() || "http://localhost:3000";
@@ -100,11 +96,9 @@ export function loadEnv(): AppEnv {
       dailyMessageLimit: Number.isInteger(dailyMessageLimit) && dailyMessageLimit > 0 ? dailyMessageLimit : 8,
       maxMessageLength: Number.isInteger(maxMessageLength) && maxMessageLength > 0 ? maxMessageLength : 400,
     },
-    clerk: {
-      secretKey: clerkSecretKey,
-      publishableKey: clerkPublishableKey,
-      webhookSecret: clerkWebhookSecret,
-      isConfigured: Boolean(clerkSecretKey && clerkPublishableKey),
+    bootstrapAdmin: {
+      email: bootstrapAdminEmail,
+      password: bootstrapAdminPassword,
     },
     security: {
       allowedOrigin,

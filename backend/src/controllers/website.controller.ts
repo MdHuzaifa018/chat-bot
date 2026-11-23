@@ -1,108 +1,94 @@
-import type { Request, Response, NextFunction } from "express";
+import type { Response, NextFunction } from "express";
 import { WebsiteService } from "../services/website.service.js";
+import type { AccountAuthRequest } from "../middlewares/accountAuth.middleware.js";
+import { ApiError } from "../utils/apiError.js";
+
+function requireClient(req: AccountAuthRequest) {
+  if (!req.account || req.account.accountType !== "client") {
+    throw new ApiError(401, "CLIENT_AUTH_REQUIRED", "Sign in with your client access code.");
+  }
+  return req.account;
+}
 
 export class WebsiteController {
-  /**
-   * POST /api/websites
-   * Add a new website -> triggers theme detection & crawl
-   */
-  static async createWebsite(req: Request, res: Response, next: NextFunction) {
+  static async createWebsite(req: AccountAuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { url, name } = req.body;
-      const clerkUserId = (req as any).auth?.userId || req.headers["x-user-id"];
-      const userEmail = (req as any).auth?.sessionClaims?.email || req.headers["x-user-email"];
-
-      const userId = await WebsiteService.getOrCreateUserId(
-        typeof clerkUserId === "string" ? clerkUserId : undefined,
-        typeof userEmail === "string" ? userEmail : undefined
-      );
-
+      const account = requireClient(req);
       const result = await WebsiteService.createWebsite({
-        userId,
-        name,
-        url,
+        userId: account.userId,
+        clientAccountId: account.id,
+        name: typeof req.body?.name === "string" ? req.body.name : undefined,
+        url: String(req.body?.url ?? ""),
       });
-
-      res.status(201).json({
-        data: result,
-      });
-    } catch (err) {
-      next(err);
+      res.status(201).json({ data: result });
+    } catch (error) {
+      next(error);
     }
   }
 
-  /**
-   * GET /api/websites
-   * List websites for current user
-   */
-  static async listWebsites(req: Request, res: Response, next: NextFunction) {
+  static async listWebsites(req: AccountAuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
-      const clerkUserId = (req as any).auth?.userId || req.headers["x-user-id"];
-      const userId = await WebsiteService.getOrCreateUserId(
-        typeof clerkUserId === "string" ? clerkUserId : undefined
-      );
-
-      const websites = await WebsiteService.listWebsites(userId);
+      const account = requireClient(req);
+      const websites = await WebsiteService.listWebsites(account.id);
       res.status(200).json({ data: websites });
-    } catch (err) {
-      next(err);
+    } catch (error) {
+      next(error);
     }
   }
 
-  /**
-   * GET /api/websites/:id
-   * Get single website details, pages, knowledge, config
-   */
-  static async getWebsiteDetails(req: Request, res: Response, next: NextFunction) {
+  static async getWebsiteDetails(req: AccountAuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
-      const id = String(req.params.id);
-      const details = await WebsiteService.getWebsiteDetails(id);
+      const account = requireClient(req);
+      const details = await WebsiteService.getWebsiteDetails(String(req.params.id), account.id);
       res.status(200).json({ data: details });
-    } catch (err) {
-      next(err);
+    } catch (error) {
+      next(error);
     }
   }
 
-  /**
-   * PATCH /api/websites/:id/chatbot
-   * Update chatbot customization
-   */
-  static async updateChatbotConfig(req: Request, res: Response, next: NextFunction) {
+  static async updateChatbotConfig(req: AccountAuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
-      const id = String(req.params.id);
-      const updated = await WebsiteService.updateChatbotConfig(id, req.body);
+      const account = requireClient(req);
+      const updated = await WebsiteService.updateChatbotConfig(String(req.params.id), account.id, req.body ?? {});
       res.status(200).json({ data: updated });
-    } catch (err) {
-      next(err);
+    } catch (error) {
+      next(error);
     }
   }
 
-  /**
-   * POST /api/websites/:id/knowledge
-   * Add manual knowledge or FAQ
-   */
-  static async addKnowledgeDoc(req: Request, res: Response, next: NextFunction) {
+  static async updateQuestions(req: AccountAuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
-      const id = String(req.params.id);
-      const { title, content, sourceType } = req.body;
-      const doc = await WebsiteService.addKnowledgeDoc(id, { title, content, sourceType });
+      const account = requireClient(req);
+      const questions = await WebsiteService.updateSuggestedQuestions(
+        String(req.params.id), account.id, req.body?.questions ?? []
+      );
+      res.status(200).json({ data: questions });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async addKnowledgeDoc(req: AccountAuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const account = requireClient(req);
+      const doc = await WebsiteService.addKnowledgeDoc(String(req.params.id), account.id, {
+        title: String(req.body?.title ?? ""),
+        content: String(req.body?.content ?? ""),
+        sourceType: req.body?.sourceType === "faq" ? "faq" : "manual_doc",
+      });
       res.status(201).json({ data: doc });
-    } catch (err) {
-      next(err);
+    } catch (error) {
+      next(error);
     }
   }
 
-  /**
-   * POST /api/websites/:id/recrawl
-   * Trigger a re-crawl of the website
-   */
-  static async recrawlWebsite(req: Request, res: Response, next: NextFunction) {
+  static async recrawlWebsite(req: AccountAuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
-      const id = String(req.params.id);
-      const count = await WebsiteService.recrawlWebsite(id);
-      res.status(200).json({ message: "Re-crawled successfully.", pagesCrawled: count });
-    } catch (err) {
-      next(err);
+      const account = requireClient(req);
+      const count = await WebsiteService.recrawlWebsite(String(req.params.id), account.id);
+      res.status(200).json({ data: { pagesCrawled: count } });
+    } catch (error) {
+      next(error);
     }
   }
 }

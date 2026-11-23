@@ -16,8 +16,8 @@ This folder contains the project planning and engineering documents.
 -   Frontend: Next.js + React
 -   Backend API: Node.js + Express.js
 -   Database: Supabase PostgreSQL
--   AI orchestration / RAG: Dify
--   Model: Gemini configured in Dify
+-   AI / RAG: Google Gemini with tenant-scoped crawled website context
+-   Dashboard authentication: Express-managed HttpOnly cookie sessions (no Clerk)
 
 The original project kickoff brief listed Next.js API Routes for
 backend. The team has since selected a separate Express backend. These
@@ -26,8 +26,7 @@ reflecting that team decision.
 
 ## Important decisions before production
 
--   Select email OTP or secure guest-session authentication.
--   Confirm Dify Chatflow/Chat vs Workflow application type.
+-   Finalize account recovery and credential rotation flows.
 -   Approve consent wording, retention, and deletion process.
 -   Finalize RLS policies and test cross-client isolation.
 -   Keep all privileged keys server-side.

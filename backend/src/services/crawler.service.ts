@@ -1,5 +1,6 @@
 import { ApiError } from "../utils/apiError.js";
 import { supabaseRequest } from "../utils/supabase.js";
+import { createHash } from "node:crypto";
 import type { CrawledPage, KnowledgeDocument } from "../types/index.js";
 
 interface CrawlResult {
@@ -58,9 +59,11 @@ export class CrawlerService {
         method: "GET",
         headers: {
           "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 SupportAI-Crawler/1.0",
-          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+          "Accept-Language": "en-US,en;q=0.9,hi;q=0.8",
         },
+        redirect: "follow",
         signal: AbortSignal.timeout(timeoutMs),
       });
 
@@ -68,9 +71,9 @@ export class CrawlerService {
         throw new Error(`HTTP ${response.status} ${response.statusText}`);
       }
 
-      const contentType = response.headers.get("content-type") || "";
-      if (!contentType.includes("text/html") && !contentType.includes("application/xhtml")) {
-        throw new Error(`Unsupported content type: ${contentType}`);
+      const contentType = (response.headers.get("content-type") || "").toLowerCase();
+      if (!contentType.includes("text/html") && !contentType.includes("application/xhtml") && !contentType.includes("text/plain")) {
+        // Continue even if content-type header is slightly non-standard
       }
 
       return await response.text();
@@ -135,6 +138,69 @@ export class CrawlerService {
   }
 
   /**
+   * SPA Deep Extraction: For modern React, Vite, Next.js, and Vue apps where static HTML is thin,
+   * inspect JavaScript bundles to discover internal client routes and readable UI content.
+   */
+  static async extractSpaContent(html: string, baseUrl: URL): Promise<{ text: string; routes: string[] }> {
+    const scriptMatches = Array.from(html.matchAll(/<script[^>]+src=["']([^"']+\.js)["']/gi));
+    let bundleText = "";
+    const routes = new Set<string>();
+
+    for (const match of scriptMatches) {
+      const src = match[1];
+      if (
+        src.includes("turnstile") ||
+        src.includes("analytics") ||
+        src.includes("clarity") ||
+        src.includes("gtag") ||
+        src.includes("polyfill")
+      ) {
+        continue;
+      }
+
+      try {
+        const scriptUrl = new URL(src, baseUrl.origin);
+        if (scriptUrl.hostname === baseUrl.hostname) {
+          const js = await this.fetchHtml(scriptUrl.href, 8000);
+
+          // 1. Extract internal client-side routes (e.g. path:"/booking", to:"/events")
+          const pathMatches = js.matchAll(/(?:path|to|href):\s*["'](\/[a-zA-Z0-9_\-\/]{2,30})["']/g);
+          for (const pm of pathMatches) {
+            routes.add(pm[1]);
+          }
+
+          // 2. Extract UI labels, descriptions, and content strings
+          const stringMatches = js.matchAll(/["']([A-Z][A-Za-z0-9 ,.?!:;'\-\(\)]{12,120})["']/g);
+          const collectedStrings = new Set<string>();
+          for (const sm of stringMatches) {
+            const str = sm[1].trim();
+            if (
+              !str.includes("function") &&
+              !str.includes("return") &&
+              !str.includes("prototype") &&
+              !str.includes("webpack") &&
+              !str.includes("styled") &&
+              !str.startsWith("text-") &&
+              !str.startsWith("bg-") &&
+              !str.startsWith("M")
+            ) {
+              collectedStrings.add(str);
+            }
+          }
+
+          if (collectedStrings.size > 0) {
+            bundleText += "\n" + Array.from(collectedStrings).slice(0, 50).join(". ") + ".";
+          }
+        }
+      } catch {
+        // continue
+      }
+    }
+
+    return { text: bundleText, routes: Array.from(routes) };
+  }
+
+  /**
    * Find internal links within the same domain
    */
   static extractInternalLinks(html: string, baseUrl: URL, maxLinks = 15): string[] {
@@ -186,6 +252,24 @@ export class CrawlerService {
         const html = await this.fetchHtml(currentUrl);
         const pageData = this.extractPageData(html, currentUrl);
 
+        // SPA Deep Extraction: If static HTML text is thin (< 400 chars), inspect client-side JS bundles
+        if (pageData.cleanText.length < 400) {
+          try {
+            const spaData = await this.extractSpaContent(html, rootUrl);
+            if (spaData.text) {
+              pageData.cleanText += "\n\n[Application Data & UI Content]:\n" + spaData.text;
+            }
+            for (const r of spaData.routes) {
+              const routeUrl = `${rootUrl.origin}${r}`;
+              if (!visited.has(routeUrl) && !queue.includes(routeUrl)) {
+                queue.push(routeUrl);
+              }
+            }
+          } catch {
+            // continue
+          }
+        }
+
         if (pageData.cleanText.length > 30) {
           results.push(pageData);
 
@@ -206,12 +290,16 @@ export class CrawlerService {
             });
 
             // Also index as knowledge document for Gemini RAG
-            await supabaseRequest<KnowledgeDocument>("knowledge_documents", {
+            const slug = `${websiteId}-${createHash("sha256").update(pageData.url).digest("hex").slice(0, 32)}`;
+            await supabaseRequest<KnowledgeDocument[]>("knowledge_documents?on_conflict=slug", {
               method: "POST",
-              prefer: "return=representation",
+              prefer: "resolution=merge-duplicates,return=representation",
               body: {
                 website_id: websiteId,
                 title: pageData.title || `Page ${pageData.path}`,
+                slug,
+                category: "website",
+                is_published: true,
                 source_type: "crawled_page",
                 source_url: pageData.url,
                 content: `Title: ${pageData.title}\nURL: ${pageData.url}\nSummary: ${pageData.description}\n\nContent:\n${pageData.cleanText}`,

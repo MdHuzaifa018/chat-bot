@@ -1,62 +1,28 @@
-# AI-Powered Client Support Chatbot - Backend
+# SupportAI API
 
-Backend service built with **Next.js API Routes (TypeScript)**, **Supabase PostgreSQL (RLS)**, and **Dify AI Workflow + Gemini API**.
+Express and TypeScript API. Supabase is accessed server-side with the service-role key; Gemini generates replies grounded in a tenant's crawled website content. Account authentication uses hashed passwords/access codes and opaque HttpOnly cookie sessions.
 
----
+## Run
 
-## 📖 Complete Documentation & Explanation
-For an in-depth, Hindi/English breakdown of the tasks, architecture, security, and code walkthrough, please read:
-👉 **[PROJECT_EXPLANATION.md](PROJECT_EXPLANATION.md)**
-
----
-
-## 🚀 Quick Start
-
-### 1. Install Dependencies
 ```bash
 npm install
-```
-
-### 2. Configure Environment
-Copy `.env.example` to `.env.local` and add your credentials:
-```bash
-cp .env.example .env.local
-```
-
-Required variables:
-- `SUPABASE_URL` - Supabase project URL
-- `SUPABASE_SERVICE_ROLE_KEY` - Supabase admin secret key
-- `DIFY_API_BASE_URL` - Dify endpoint (e.g. `https://api.dify.ai/v1`)
-- `DIFY_API_KEY` - Dify App API Key
-- `ALLOWED_ORIGIN` - Frontend origin (e.g. `http://localhost:3000`)
-- `RATE_LIMIT_MAX_REQUESTS` - Max requests per 60s window (default: 20)
-
-### 3. Apply Database Migration
-Execute `supabase/migrations/202611130001_init.sql` inside your Supabase **SQL Editor**.
-
-### 4. Run Development Server
-```bash
+copy .env.example .env.local
 npm run dev
 ```
 
-Server will be running at `http://localhost:3000`.
+Apply migrations from `supabase/migrations/` in filename order before starting the API. Set `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`. On the first start, set `BOOTSTRAP_ADMIN_EMAIL` and a unique `BOOTSTRAP_ADMIN_PASSWORD` of at least 12 characters; after the super-admin row exists, those bootstrap values may be removed. Set `GEMINI_API_KEY` to enable generated replies and questions. Without it, the crawler still stores website data and the chat returns a clearly marked safe fallback response.
 
----
+The default API is `http://localhost:5000/api`. Set `ALLOWED_ORIGIN` to the exact frontend origin. For cross-site HTTPS deployment set `SESSION_COOKIE_SAME_SITE=none`.
 
-## 📡 API Endpoints
+## Route groups
 
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/health` | Health check for server, database connection, and Dify status |
-| `POST` | `/api/session/start` | Validates email & consent, sets HttpOnly session cookie, returns IDs |
-| `POST` | `/api/chat/message` | Verifies session & rate limit, saves message, queries Dify (Gemini), saves reply |
-| `GET` | `/api/chat/history` | Retrieves paginated messages for authenticated conversation |
+- `/api/health` — backend and database health.
+- `/api/auth/*` — client access request, client/admin login, current session, logout.
+- `/api/websites/*` — client-owned website creation, listing, configuration, suggested questions/answers, knowledge docs, and recrawl.
+- `/api/admin/*` — admin overview, access-request decisions, and team management. Routes enforce account permissions on the server.
+- `/api/widget/:publicId/*` — public configuration, visitor sessions, and chat; each request checks the website origin and session.
+- `/api/session/*` and `/api/chat/*` — legacy visitor chat endpoints retained for existing clients.
 
----
+## Session and data boundaries
 
-## 🔒 Security Highlights
-- **Row Level Security (RLS)**: Direct browser access to database tables is revoked.
-- **HttpOnly Cookies**: Raw session tokens are never exposed to browser JavaScript, preventing XSS attacks.
-- **SHA-256 Hash**: Only hashes of session tokens and client IPs are stored in the database.
-- **Atomic Rate Limiter**: Shared PostgreSQL bucket enforces 20 req/min across serverless instances.
-- **CORS Protection**: Restricted strictly to `ALLOWED_ORIGIN`.
+The cookie contains an opaque random token with `HttpOnly`; Supabase stores only its SHA-256 hash and expiration. Client website queries always include the authenticated `client_account_id`. Admin credentials and client access codes are stored as scrypt hashes. Login and public widget endpoints use the shared database-backed rate limiter. Browser roles have no table grants; only the backend service role accesses account and tenant tables.

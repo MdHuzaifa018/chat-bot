@@ -3,6 +3,8 @@ import { ApiError } from "../utils/apiError.js";
 import { CrawlerService } from "./crawler.service.js";
 import { ThemeDetectorService } from "./themeDetector.service.js";
 import { GeminiService } from "./gemini.service.js";
+import { randomBytes } from "node:crypto";
+import { env } from "../config/env.js";
 import type {
   Website,
   ChatbotConfig,
@@ -13,51 +15,16 @@ import type {
 
 export class WebsiteService {
   /**
-   * Ensure user exists in public.users; returns the user ID.
-   */
-  static async getOrCreateUserId(clerkUserId?: string, email?: string): Promise<string> {
-    const defaultEmail = email || (clerkUserId ? `${clerkUserId}@user.local` : "dev@supportai.local");
-
-    try {
-      const existing = await supabaseRequest<Array<{ id: string }>>(
-        `users?email=eq.${encodeURIComponent(defaultEmail)}&select=id&limit=1`
-      );
-      if (existing && existing.length > 0) {
-        return existing[0].id;
-      }
-
-      // Create new user
-      const created = await supabaseRequest<Array<{ id: string }>>("users", {
-        method: "POST",
-        prefer: "return=representation",
-        body: {
-          clerk_user_id: clerkUserId || null,
-          email: defaultEmail,
-          name: defaultEmail.split("@")[0],
-          role: "owner",
-        },
-      });
-
-      if (created && created[0]) {
-        return created[0].id;
-      }
-    } catch (err) {
-      console.warn("[WebsiteService] getOrCreateUserId fallback:", err);
-    }
-
-    // Fallback fixed dev user UUID
-    return "00000000-0000-0000-0000-000000000001";
-  }
-
-  /**
    * Create a new website, run crawler and auto-detect theme & suggested questions
    */
   static async createWebsite({
     userId,
+    clientAccountId,
     name,
     url,
   }: {
     userId: string;
+    clientAccountId: string;
     name?: string;
     url: string;
   }): Promise<{
@@ -111,7 +78,7 @@ export class WebsiteService {
     }
 
     // 3. Create Default Chatbot Config
-    const publicChatbotId = `bot_${Math.random().toString(36).substring(2, 10)}${Math.random().toString(36).substring(2, 10)}`;
+    const publicChatbotId = `bot_${randomBytes(12).toString("hex")}`;
     const configRows = await supabaseRequest<ChatbotConfig[]>("chatbot_configs", {
       method: "POST",
       prefer: "return=representation",
@@ -128,21 +95,27 @@ export class WebsiteService {
         font_family: detectedTheme.fontFamily,
         logo_url: detectedTheme.logoUrl,
         position: "bottom-right",
-        allowed_origins: ["*"],
+        allowed_origins: Array.from(new Set([safeUrl.origin, env.security.allowedOrigin, "http://localhost:5000"])),
         is_published: true,
       },
     });
 
     const chatbotConfig = configRows[0];
+    if (!chatbotConfig) {
+      await supabaseRequest<undefined>(`websites?id=eq.${encodeURIComponent(website.id)}`, { method: "DELETE", prefer: "return=minimal" });
+      throw new ApiError(503, "CHATBOT_CONFIG_CREATE_FAILED", "Could not create chatbot configuration for this website.");
+    }
 
     // 4. Crawl pages (homepage + internal links)
     let crawledPages: Array<{ title: string; cleanText: string; url: string }> = [];
+    let crawlStatus: Website["crawl_status"] = "failed";
     try {
       crawledPages = await CrawlerService.crawlWebsite(website.id, safeUrl.href, 6);
+      crawlStatus = crawledPages.length > 0 ? "completed" : "failed";
       await supabaseRequest(`websites?id=eq.${website.id}`, {
         method: "PATCH",
         body: {
-          crawl_status: "completed",
+          crawl_status: crawlStatus,
           last_crawled_at: new Date().toISOString(),
         },
       });
@@ -151,7 +124,7 @@ export class WebsiteService {
       await supabaseRequest(`websites?id=eq.${website.id}`, {
         method: "PATCH",
         body: {
-          crawl_status: "completed",
+          crawl_status: "failed",
           last_crawled_at: new Date().toISOString(),
         },
       });
@@ -180,27 +153,9 @@ export class WebsiteService {
     return {
       website: {
         ...website,
-        crawl_status: "completed",
+        crawl_status: crawlStatus,
       },
-      chatbotConfig: chatbotConfig || {
-        id: "default",
-        website_id: website.id,
-        public_chatbot_id: publicChatbotId,
-        chatbot_name: `${finalName} Assistant`,
-        welcome_message: `Hi there! 👋 Welcome to ${finalName}. How can I help you today?`,
-        placeholder_text: "Ask anything about our services...",
-        primary_color: detectedTheme.primaryColor,
-        secondary_color: detectedTheme.secondaryColor,
-        background_color: "#FFFFFF",
-        text_color: "#1E293B",
-        font_family: detectedTheme.fontFamily,
-        logo_url: detectedTheme.logoUrl,
-        position: "bottom-right",
-        allowed_origins: ["*"],
-        is_published: true,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
+      chatbotConfig,
       pagesCrawled: crawledPages.length,
       suggestedQuestions: questions,
     };
@@ -209,9 +164,10 @@ export class WebsiteService {
   /**
    * List websites for user
    */
-  static async listWebsites(userId: string): Promise<Website[]> {
+  static async listWebsites(userId?: string): Promise<Website[]> {
+    const filter = userId ? `user_id=eq.${encodeURIComponent(userId)}&` : "";
     const rows = await supabaseRequest<Website[]>(
-      `websites?select=id,user_id,name,url,domain,description,crawl_status,last_crawled_at,created_at,updated_at&order=created_at.desc&limit=50`
+      `websites?${filter}select=id,user_id,name,url,domain,description,crawl_status,last_crawled_at,created_at,updated_at&order=created_at.desc&limit=50`
     );
     return rows || [];
   }
@@ -219,8 +175,8 @@ export class WebsiteService {
   /**
    * Get single website details with config and questions
    */
-  static async getWebsiteDetails(websiteId: string) {
-    const websites = await supabaseRequest<Website[]>(`websites?id=eq.${websiteId}&limit=1`);
+  static async getWebsiteDetails(websiteId: string, _userId?: string) {
+    const websites = await supabaseRequest<Website[]>(`websites?id=eq.${encodeURIComponent(websiteId)}&limit=1`);
     const website = websites[0];
     if (!website) {
       throw new ApiError(404, "NOT_FOUND", "Website not found.");
@@ -234,7 +190,7 @@ export class WebsiteService {
       `crawled_pages?website_id=eq.${websiteId}&select=id,url,path,title,description,created_at&order=created_at.desc&limit=20`
     );
     const docs = await supabaseRequest<KnowledgeDocument[]>(
-      `knowledge_documents?website_id=eq.${websiteId}&select=id,title,source_type,source_url,created_at&order=created_at.desc&limit=30`
+      `knowledge_documents?website_id=eq.${websiteId}&select=id,title,source_type,source_url,content,created_at&order=created_at.desc&limit=30`
     );
 
     return {
@@ -251,8 +207,10 @@ export class WebsiteService {
    */
   static async updateChatbotConfig(
     websiteId: string,
+    clientAccountId: string,
     updates: Partial<ChatbotConfig>
   ): Promise<ChatbotConfig> {
+    await this.getOwnedWebsite(websiteId, clientAccountId);
     const allowed = [
       "chatbot_name",
       "welcome_message",
@@ -276,7 +234,7 @@ export class WebsiteService {
       }
     }
 
-    const rows = await supabaseRequest<ChatbotConfig[]>(`chatbot_configs?website_id=eq.${websiteId}`, {
+    const rows = await supabaseRequest<ChatbotConfig[]>(`chatbot_configs?website_id=eq.${encodeURIComponent(websiteId)}`, {
       method: "PATCH",
       prefer: "return=representation",
       body: sanitized,
@@ -289,13 +247,44 @@ export class WebsiteService {
     return rows[0];
   }
 
+  static async updateSuggestedQuestions(
+    websiteId: string,
+    clientAccountId: string,
+    questions: Array<{ question_text: string; answer?: string }>
+  ): Promise<SuggestedQuestion[]> {
+    await this.getOwnedWebsite(websiteId, clientAccountId);
+    if (!Array.isArray(questions) || questions.length > 30) {
+      throw new ApiError(400, "INVALID_QUESTIONS", "Provide up to 30 questions.");
+    }
+    const sanitized = questions.map((item, index) => ({
+      website_id: websiteId,
+      question_text: String(item.question_text ?? "").trim().slice(0, 200),
+      answer: String(item.answer ?? "").trim().slice(0, 2000) || null,
+      display_order: index,
+      is_active: true,
+    })).filter((item) => item.question_text.length > 0);
+
+    await supabaseRequest<undefined>(`suggested_questions?website_id=eq.${encodeURIComponent(websiteId)}`, {
+      method: "DELETE",
+      prefer: "return=minimal",
+    });
+    if (sanitized.length === 0) return [];
+    return supabaseRequest<SuggestedQuestion[]>("suggested_questions", {
+      method: "POST",
+      prefer: "return=representation",
+      body: sanitized,
+    });
+  }
+
   /**
    * Add a manual knowledge document or FAQ
    */
   static async addKnowledgeDoc(
     websiteId: string,
+    clientAccountId: string,
     { title, content, sourceType }: { title: string; content: string; sourceType?: "manual_doc" | "faq" }
   ): Promise<KnowledgeDocument> {
+    await this.getOwnedWebsite(websiteId, clientAccountId);
     if (!title?.trim() || !content?.trim()) {
       throw new ApiError(400, "INVALID_INPUT", "Title and content are required.");
     }
@@ -317,12 +306,8 @@ export class WebsiteService {
   /**
    * Re-crawl website
    */
-  static async recrawlWebsite(websiteId: string): Promise<number> {
-    const websites = await supabaseRequest<Website[]>(`websites?id=eq.${websiteId}&limit=1`);
-    const website = websites[0];
-    if (!website) {
-      throw new ApiError(404, "NOT_FOUND", "Website not found.");
-    }
+  static async recrawlWebsite(websiteId: string, clientAccountId?: string): Promise<number> {
+    const website = await this.getOwnedWebsite(websiteId, clientAccountId);
 
     await supabaseRequest(`websites?id=eq.${websiteId}`, {
       method: "PATCH",
@@ -340,5 +325,13 @@ export class WebsiteService {
     });
 
     return pages.length;
+  }
+
+  private static async getOwnedWebsite(websiteId: string, _clientAccountId?: string): Promise<Website> {
+    const rows = await supabaseRequest<Website[]>(
+      `websites?id=eq.${encodeURIComponent(websiteId)}&limit=1`
+    );
+    if (!rows[0]) throw new ApiError(404, "NOT_FOUND", "Website not found.");
+    return rows[0];
   }
 }

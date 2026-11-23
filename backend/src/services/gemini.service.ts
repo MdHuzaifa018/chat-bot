@@ -61,26 +61,25 @@ export class GeminiService {
     const systemInstruction =
       customSystemPrompt?.trim() ||
       `You are the official AI Support Assistant for "${websiteName}".
-Your role is to help visitors by answering questions accurately based strictly on the provided website knowledge base.
+Your role is to help visitors by answering questions accurately based on the provided website knowledge base.
 
 Rules:
-1. Greetings: If the visitor says hello, hi, introduces themselves, or asks who you are, greet them warmly in the same language and introduce yourself as the ${websiteName} Assistant.
-2. Grounded Answers: Answer questions using ONLY the provided verified website context below. If facts are not in the context, do not make up or assume answers. Politely reply:
-"I do not have verified information on this topic. Please contact our support team for more details."
-3. Formatting: Use clean, concise, polite formatting. Keep answers straightforward and readable.
-4. Language: Match the visitor's language (e.g. English, Spanish, Hindi, French).`;
+1. Greetings & Identity: If the visitor says hello, hi, introduces themselves, or asks who you are / what this site does, greet them warmly in the same language and introduce yourself as the ${websiteName} Assistant, explaining briefly what services/products the site offers.
+2. Grounded Answers: Answer questions using the provided website knowledge base below. Answer in the same language the visitor uses (Hindi, Hinglish, English, etc.).
+3. Conciseness: Keep your answers clear, helpful, direct and concise (2-4 sentences). Avoid long essays or fluff.
+4. Unrelated topics: If a question is completely unrelated to the website (e.g. asking for unrelated math or recipes), politely state that you can only answer questions related to ${websiteName}.`;
 
     const contextText =
       contextChunks.length > 0
         ? `=== VERIFIED WEBSITE KNOWLEDGE BASE ===\n${contextChunks.join("\n\n---\n\n")}\n=== END KNOWLEDGE BASE ===`
-        : "No direct knowledge chunks retrieved. Answer only conversational greetings or assistant identity.";
+        : `=== WEBSITE NAME ===\n${websiteName}\nNo specific page chunks retrieved. Explain who you are and offer general assistance for ${websiteName}.`;
 
     // Format previous turns for context
     const historyText =
       conversationHistory.length > 0
         ? `\n=== RECENT CONVERSATION HISTORY ===\n` +
           conversationHistory
-            .slice(-4)
+            .slice(-3)
             .map((m) => `${m.role === "user" ? "Visitor" : "Assistant"}: ${m.content}`)
             .join("\n") +
           `\n=== END HISTORY ===\n`
@@ -91,9 +90,9 @@ Rules:
     // Prioritized fast and resilient models with auto-failover
     const modelsToTry = Array.from(
       new Set([
-        env.gemini.model || "gemini-3.5-flash",
-        "gemini-3.5-flash",
+        env.gemini.model || "gemini-3.5-flash-lite",
         "gemini-3.5-flash-lite",
+        "gemini-3.5-flash",
         "gemini-3.6-flash",
         "gemini-3.8-flash",
       ])
@@ -106,8 +105,8 @@ Rules:
           contents: prompt,
           config: {
             systemInstruction,
-            maxOutputTokens: env.gemini.maxOutputTokens,
-            temperature: 0.3,
+            maxOutputTokens: Math.min(env.gemini.maxOutputTokens || 400, 450),
+            temperature: 0.2,
           },
         });
 
@@ -137,11 +136,7 @@ Rules:
    */
   static async generateSuggestedQuestions(websiteName: string, contentSummaries: string[]): Promise<string[]> {
     if (!env.gemini.isConfigured || contentSummaries.length === 0) {
-      return [
-        `What services does ${websiteName} offer?`,
-        "How can I contact customer support?",
-        "What are your pricing plans?",
-      ];
+      return [];
     }
 
     const ai = this.getClient();
@@ -173,11 +168,7 @@ ${contentSummaries.slice(0, 3).join("\n\n")}`;
       console.warn("[GeminiService] Question generation fallback:", err);
     }
 
-    return [
-      `What services does ${websiteName} offer?`,
-      "How can I contact customer support?",
-      "What are your pricing plans?",
-    ];
+    return [];
   }
 
   /**

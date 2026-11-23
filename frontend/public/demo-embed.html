@@ -222,16 +222,15 @@
   <script>
     (function () {
       const urlParams = new URLSearchParams(window.location.search);
-      const botId = urlParams.get("bot") || "bot_demo12345678";
+      const botId = urlParams.get("bot") || "";
       document.getElementById("display-bot-id").textContent = botId;
 
       // Dynamically inject the 1-line widget script
       const script = document.createElement("script");
       // Use local backend port 5000 or relative /widget.js
-      script.src = "http://localhost:5000/widget.js";
-      script.setAttribute("data-chatbot-id", botId);
-      script.async = true;
-      document.body.appendChild(script);
+      if (!botId) { document.getElementById("display-bot-id").textContent = "No chatbot ID provided"; return; }
+      script.src = `${urlParams.get("api") || "http://localhost:5000"}/widget.js`;
+      script.setAttribute("data-chatbot-id", botId); script.async = true; document.body.appendChild(script);
     })();
   </script>
 </body>

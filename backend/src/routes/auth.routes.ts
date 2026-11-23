@@ -1,11 +1,12 @@
 import { Router } from "express";
-import { getMeHandler, clerkWebhookHandler } from "../controllers/auth.controller.js";
-import { requireClerkAuth } from "../middlewares/clerkAuth.middleware.js";
+import { adminLogin, clientLogin, currentAccount, logout, submitAccessRequest } from "../controllers/auth.controller.js";
+import { attachAccount } from "../middlewares/accountAuth.middleware.js";
+import { publicRateLimiter } from "../middlewares/rateLimit.middleware.js";
 
 export const authRouter = Router();
 
-// Protected dashboard user info
-authRouter.get("/me", requireClerkAuth, getMeHandler);
-
-// Clerk Svix Webhook endpoint
-authRouter.post("/webhook", clerkWebhookHandler);
+authRouter.post("/client/login", publicRateLimiter, clientLogin);
+authRouter.post("/admin/login", publicRateLimiter, adminLogin);
+authRouter.post("/client/request-access", publicRateLimiter, submitAccessRequest);
+authRouter.get("/me", attachAccount, currentAccount);
+authRouter.post("/logout", logout);

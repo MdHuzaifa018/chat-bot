@@ -18,8 +18,8 @@
 
   const publicChatbotId =
     currentScript?.getAttribute("data-chatbot-id") ||
-    window.SUPPORT_AI_CHATBOT_ID ||
-    "default";
+    window.SUPPORT_AI_CHATBOT_ID || "";
+  if (!publicChatbotId) { console.error("SupportAI widget requires data-chatbot-id."); return; }
 
   // Determine API base URL
   let apiBase = window.SUPPORT_AI_API_URL;
@@ -502,10 +502,9 @@
   const botAvatar = shadow.getElementById("bot-avatar");
 
   let isOpen = false;
-  let visitorId = localStorage.getItem(`support_ai_visitor_${publicChatbotId}`) || "";
-  let conversationId = localStorage.getItem(`support_ai_convo_${publicChatbotId}`) || "";
-  let configLoaded = false;
-  let configData = null;
+  let visitorId = "";
+  let conversationId = "";
+  let sessionToken = "";
 
   // Toggle open/close
   function toggleChat(openState) {
@@ -578,7 +577,6 @@
       if (!res.ok) throw new Error("Failed to load widget config");
 
       const { data } = await res.json();
-      configData = data;
       const { config, suggestedQuestions } = data;
 
       // Apply dynamic colors
@@ -625,10 +623,9 @@
         messagesBody.appendChild(section);
       }
 
-      configLoaded = true;
     } catch (err) {
       console.warn("[SupportAI Widget] Config fallback:", err);
-      appendMessage("assistant", "Hi there! How can I assist you today?");
+      appendMessage("assistant", "Chatbot is temporarily unavailable. Please try again later.");
     }
   }
 
@@ -644,11 +641,10 @@
         const { data } = await res.json();
         visitorId = data.visitorId;
         conversationId = data.conversationId;
-        localStorage.setItem(`support_ai_visitor_${publicChatbotId}`, visitorId);
-        localStorage.setItem(`support_ai_convo_${publicChatbotId}`, conversationId);
+        sessionToken = data.sessionToken;
       }
-    } catch {
-      // offline session fallback
+    } catch (error) {
+      console.warn("[SupportAI Widget] Could not start visitor session:", error);
     }
   }
 
@@ -663,12 +659,15 @@
     showTyping();
 
     try {
+      if (!conversationId || !sessionToken) await initSession();
+      if (!conversationId || !sessionToken) throw new Error("Could not start a chat session.");
       const res = await fetch(`${apiBase}/api/widget/${publicChatbotId}/message`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: text,
           conversationId,
+          sessionToken,
         }),
       });
 

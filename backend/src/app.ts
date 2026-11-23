@@ -5,6 +5,7 @@ import cookieParser from "cookie-parser";
 import { env } from "./config/env.js";
 import { apiRouter } from "./routes/index.js";
 import { errorHandler } from "./middlewares/error.middleware.js";
+import { ApiError } from "./utils/apiError.js";
 
 export const app = express();
 
@@ -26,26 +27,23 @@ const allowedOrigins = new Set([
   "http://127.0.0.1:3002",
 ]);
 
-app.use(
-  cors({
-    origin: (incomingOrigin, callback) => {
-      // Allow requests with no origin (e.g. mobile apps, curl, server-to-server)
-      if (!incomingOrigin) return callback(null, true);
-
-      // Chatbot widget and public APIs can be called from third-party client websites
-      if (allowedOrigins.has(incomingOrigin) || env.security.allowedOrigin === "*") {
-        return callback(null, true);
-      }
-
-      // Default allow for widget embeds
-      return callback(null, true);
-    },
-    credentials: true,
-    methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "Accept", "x-user-id", "x-user-email"],
+app.use((req, res, next) => {
+  const publicWidgetRequest = req.path.startsWith("/api/widget/");
+  const corsMiddleware = cors({
+    origin: publicWidgetRequest
+      ? "*"
+      : (incomingOrigin, callback) => {
+          if (!incomingOrigin) return callback(null, false);
+          if (allowedOrigins.has(incomingOrigin)) return callback(null, incomingOrigin);
+          return callback(new ApiError(403, "ORIGIN_NOT_ALLOWED", "This frontend origin is not allowed."));
+        },
+    credentials: !publicWidgetRequest,
+    methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Accept"],
     maxAge: 600,
-  })
-);
+  });
+  corsMiddleware(req, res, next);
+});
 
 // Body parsers & Cookie parser
 app.use(express.json({ limit: "2mb" }));

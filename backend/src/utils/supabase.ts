@@ -46,7 +46,21 @@ export async function supabaseRequest<T>(
   }
 
   if (!response.ok) {
-    // Sanitize response to prevent leaking internal database schemas or table details
+    let databaseCode = "";
+    try {
+      const errorBody = await response.json() as { code?: string };
+      databaseCode = errorBody.code || "";
+    } catch {
+      // The response may not contain JSON.
+    }
+    const resourceName = resource.split("?")[0];
+    console.error(`[Supabase] ${options.method ?? "GET"} ${resourceName} failed (${response.status}${databaseCode ? ` ${databaseCode}` : ""}).`);
+    if (databaseCode === "PGRST205" || databaseCode === "42P01") {
+      throw new ApiError(503, "DATABASE_SCHEMA_NOT_READY", "A required Supabase table is missing. Apply all database migrations, then restart the backend.");
+    }
+    if (response.status === 401 || response.status === 403) {
+      throw new ApiError(503, "DATABASE_AUTH_FAILED", "Supabase rejected the server key. Check SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.");
+    }
     throw new ApiError(503, "DATABASE_ERROR", "The database operation failed.");
   }
 

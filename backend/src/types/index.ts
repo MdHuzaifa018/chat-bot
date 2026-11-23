@@ -45,7 +45,6 @@ export interface AuthenticatedRequest extends Request {
 // Multi-Tenant SaaS Interfaces
 export interface SaaSUser {
   id: string;
-  clerk_user_id?: string | null;
   email: string;
   name?: string | null;
   role: "owner" | "admin" | "member";
@@ -55,6 +54,7 @@ export interface SaaSUser {
 export interface Website {
   id: string;
   user_id: string;
+  client_account_id?: string | null;
   name: string;
   url: string;
   domain: string;
@@ -112,6 +112,7 @@ export interface SuggestedQuestion {
   id: string;
   website_id: string;
   question_text: string;
+  answer?: string | null;
   display_order: number;
   is_active: boolean;
   created_at: string;
