@@ -68,52 +68,82 @@ export class WebsiteService {
 
     const finalName = name?.trim() || detectedTheme.brandName || domain;
 
-    // 2. Insert Website Record
-    const websiteRows = await supabaseRequest<Website[]>("websites", {
-      method: "POST",
-      prefer: "return=representation",
-      body: {
-        user_id: userId,
-        name: finalName,
-        url: safeUrl.href,
-        domain,
-        crawl_status: "in_progress",
-      },
-    });
+    // 2. Insert Website Record (resilient to schema variations)
+    let websiteRows: Website[];
+    try {
+      websiteRows = await supabaseRequest<Website[]>("websites", {
+        method: "POST",
+        prefer: "return=representation",
+        body: {
+          user_id: userId,
+          client_account_id: clientAccountId,
+          name: finalName,
+          url: safeUrl.href,
+          domain,
+          crawl_status: "in_progress",
+        },
+      });
+    } catch {
+      websiteRows = await supabaseRequest<Website[]>("websites", {
+        method: "POST",
+        prefer: "return=representation",
+        body: {
+          user_id: userId,
+          name: finalName,
+          url: safeUrl.href,
+          domain,
+          crawl_status: "in_progress",
+        },
+      });
+    }
 
     const website = websiteRows[0];
     if (!website) {
       throw new ApiError(500, "CREATE_FAILED", "Failed to create website profile.");
     }
 
-    // 3. Create Default Chatbot Config
+    // 3. Create Default Chatbot Config (resilient with automatic schema fallback)
     const publicChatbotId = `bot_${randomBytes(12).toString("hex")}`;
-    const configRows = await supabaseRequest<ChatbotConfig[]>("chatbot_configs", {
-      method: "POST",
-      prefer: "return=representation",
-      body: {
-        website_id: website.id,
-        public_chatbot_id: publicChatbotId,
-        chatbot_name: `${finalName} Assistant`,
-        welcome_message: `Hi there! 👋 Welcome to ${finalName}. How can I help you today?`,
-        placeholder_text: "Ask anything about our services...",
-        primary_color: detectedTheme.primaryColor,
-        secondary_color: detectedTheme.secondaryColor,
-        accent_color: detectedTheme.accentColor || "#A8C99B",
-        background_color: detectedTheme.backgroundColor || "#FFFFFF",
-        text_color: detectedTheme.textColor || "#1E293B",
-        border_color: detectedTheme.borderColor || "#E2E8F0",
-        button_color: detectedTheme.buttonColor || detectedTheme.primaryColor,
-        button_text_color: detectedTheme.buttonTextColor || "#FFFFFF",
-        font_family: detectedTheme.fontFamily,
-        font_heading: detectedTheme.fontHeading || detectedTheme.fontFamily,
-        logo_url: detectedTheme.logoUrl,
-        theme_confidence: detectedTheme.confidence,
-        position: "bottom-right",
-        allowed_origins: Array.from(new Set([safeUrl.origin, env.security.allowedOrigin, "http://localhost:5000", "http://localhost:3000"])),
-        is_published: true,
-      },
-    });
+    const baseConfigBody = {
+      website_id: website.id,
+      public_chatbot_id: publicChatbotId,
+      chatbot_name: `${finalName} Assistant`,
+      welcome_message: `Hi there! 👋 Welcome to ${finalName}. How can I help you today?`,
+      placeholder_text: "Ask anything about our services...",
+      primary_color: detectedTheme.primaryColor,
+      secondary_color: detectedTheme.secondaryColor,
+      background_color: "#FFFFFF",
+      text_color: "#1E293B",
+      font_family: detectedTheme.fontFamily,
+      logo_url: detectedTheme.logoUrl,
+      position: "bottom-right" as const,
+      allowed_origins: Array.from(new Set([safeUrl.origin, env.security.allowedOrigin, "http://localhost:5000", "http://localhost:3000"])),
+      is_published: true,
+    };
+
+    let configRows: ChatbotConfig[];
+    try {
+      configRows = await supabaseRequest<ChatbotConfig[]>("chatbot_configs", {
+        method: "POST",
+        prefer: "resolution=merge-duplicates,return=representation",
+        body: {
+          ...baseConfigBody,
+          accent_color: detectedTheme.accentColor || "#A8C99B",
+          border_color: detectedTheme.borderColor || "#E2E8F0",
+          button_color: detectedTheme.buttonColor || detectedTheme.primaryColor,
+          button_text_color: detectedTheme.buttonTextColor || "#FFFFFF",
+          font_heading: detectedTheme.fontHeading || detectedTheme.fontFamily,
+          theme_confidence: detectedTheme.confidence,
+        },
+      });
+    } catch {
+      // Automatic fallback for current Supabase schema
+      configRows = await supabaseRequest<ChatbotConfig[]>("chatbot_configs", {
+        method: "POST",
+        prefer: "resolution=merge-duplicates,return=representation",
+        body: baseConfigBody,
+      });
+    }
 
     const chatbotConfig = configRows[0];
     if (!chatbotConfig) {

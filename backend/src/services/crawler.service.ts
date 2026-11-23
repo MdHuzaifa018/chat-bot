@@ -417,50 +417,86 @@ export class CrawlerService {
 
           const contentHash = createHash("sha256").update(pageData.cleanText).digest("hex");
 
-          // Save page to Supabase crawled_pages
+          // 1. Save page to Supabase crawled_pages with resilient column fallback
           try {
-            await supabaseRequest<CrawledPage>("crawled_pages", {
-              method: "POST",
-              prefer: "resolution=merge-duplicates",
-              body: {
-                website_id: websiteId,
-                url: pageData.url,
-                path: pageData.path,
-                title: pageData.title,
-                description: pageData.description,
-                clean_text: pageData.cleanText,
-                page_type: pageData.pageType,
-                status: "crawled",
-                content_hash: contentHash,
-              },
-            });
+            try {
+              await supabaseRequest<CrawledPage>("crawled_pages", {
+                method: "POST",
+                prefer: "resolution=merge-duplicates",
+                body: {
+                  website_id: websiteId,
+                  url: pageData.url,
+                  path: pageData.path,
+                  title: pageData.title,
+                  description: pageData.description,
+                  clean_text: pageData.cleanText,
+                  page_type: pageData.pageType,
+                  status: "crawled",
+                  content_hash: contentHash,
+                },
+              });
+            } catch {
+              // Fallback to core columns
+              await supabaseRequest<CrawledPage>("crawled_pages", {
+                method: "POST",
+                prefer: "resolution=merge-duplicates",
+                body: {
+                  website_id: websiteId,
+                  url: pageData.url,
+                  path: pageData.path,
+                  title: pageData.title,
+                  description: pageData.description,
+                  clean_text: pageData.cleanText,
+                  status: "crawled",
+                },
+              });
+            }
 
-            // Semantic Chunking: Store manageable 750-char chunks for accurate RAG retrieval
+            // 2. Semantic Chunking: Store manageable 750-char chunks for accurate RAG retrieval
             const chunks = this.semanticChunkText(pageData.cleanText);
 
             for (let i = 0; i < chunks.length; i++) {
               const chunkSlug = `${websiteId}-${createHash("sha256").update(`${pageData.url}-${i}`).digest("hex").slice(0, 24)}`;
-              await supabaseRequest<KnowledgeDocument[]>("knowledge_documents?on_conflict=slug", {
-                method: "POST",
-                prefer: "resolution=merge-duplicates,return=representation",
-                body: {
-                  website_id: websiteId,
-                  title: `${pageData.title} (Part ${i + 1})`,
-                  slug: chunkSlug,
-                  category: pageData.pageType || "website",
-                  chunk_index: i,
-                  is_published: true,
-                  source_type: "crawled_chunk",
-                  source_url: pageData.url,
-                  content: chunks[i],
-                  metadata: {
-                    url: pageData.url,
-                    title: pageData.title,
-                    chunkIndex: i,
-                    totalChunks: chunks.length,
+              try {
+                // Try extended schema
+                await supabaseRequest<KnowledgeDocument[]>("knowledge_documents?on_conflict=slug", {
+                  method: "POST",
+                  prefer: "resolution=merge-duplicates,return=representation",
+                  body: {
+                    website_id: websiteId,
+                    title: `${pageData.title} (Part ${i + 1})`,
+                    slug: chunkSlug,
+                    category: pageData.pageType || "website",
+                    chunk_index: i,
+                    is_published: true,
+                    source_type: "crawled_chunk",
+                    source_url: pageData.url,
+                    content: chunks[i],
+                    metadata: {
+                      url: pageData.url,
+                      title: pageData.title,
+                      chunkIndex: i,
+                      totalChunks: chunks.length,
+                    },
                   },
-                },
-              });
+                });
+              } catch {
+                // Fallback to core columns supported by Supabase schema
+                try {
+                  await supabaseRequest<KnowledgeDocument[]>("knowledge_documents", {
+                    method: "POST",
+                    body: {
+                      website_id: websiteId,
+                      title: `${pageData.title} (Part ${i + 1})`,
+                      source_type: "crawled_chunk",
+                      source_url: pageData.url,
+                      content: chunks[i],
+                    },
+                  });
+                } catch (fallbackErr) {
+                  console.warn(`[Crawler] Failed to persist knowledge chunk ${i}:`, fallbackErr);
+                }
+              }
             }
           } catch (dbErr) {
             console.error(`[Crawler] Failed to persist page ${currentUrl}:`, dbErr);

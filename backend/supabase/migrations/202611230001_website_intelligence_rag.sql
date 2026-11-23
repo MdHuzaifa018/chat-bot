@@ -177,3 +177,4 @@ grant all on table public.suggested_questions to service_role;
 grant all on table public.crawled_pages to service_role;
 grant all on table public.knowledge_documents to service_role;
 grant execute on function public.match_website_knowledge(uuid, text, integer) to service_role;
+

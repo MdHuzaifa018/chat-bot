@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from "express";
 import { env } from "../config/env.js";
+import { supabaseRequest } from "../utils/supabase.js";
 
 /**
  * Health Controller
@@ -8,21 +9,12 @@ import { env } from "../config/env.js";
 export class HealthController {
   static async checkHealth(_req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { url, serviceRoleKey } = env.supabase;
       let databaseStatus: "ok" | "unavailable" = "unavailable";
 
       // Lightweight probe to Supabase PostgREST
       try {
-        const probe = await fetch(`${url}/rest/v1/users?select=id&limit=0`, {
-          headers: {
-            apikey: serviceRoleKey,
-            Authorization: `Bearer ${serviceRoleKey}`,
-          },
-          signal: AbortSignal.timeout(5000),
-        });
-        if (probe.ok) {
-          databaseStatus = "ok";
-        }
+        await supabaseRequest("websites?select=id&limit=1", { timeoutMs: 3500 });
+        databaseStatus = "ok";
       } catch {
         databaseStatus = "unavailable";
       }
