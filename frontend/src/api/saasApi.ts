@@ -25,15 +25,22 @@ export const API_BASE = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:50
 export const API_ORIGIN = API_BASE.replace(/\/api$/, "");
 
 export async function apiRequest<T = any>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${API_BASE}${path.startsWith("/") ? path : `/${path}`}`, {
-    ...init,
-    credentials: "include",
-    cache: "no-store",
-    headers: { ...(init.body ? { "Content-Type": "application/json" } : {}), ...init.headers },
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload?.error?.message || payload?.message || `Request failed (${response.status})`);
-  return payload as T;
+  try {
+    const response = await fetch(`${API_BASE}${path.startsWith("/") ? path : `/${path}`}`, {
+      ...init,
+      credentials: "include",
+      cache: "no-store",
+      headers: { ...(init.body ? { "Content-Type": "application/json" } : {}), ...init.headers },
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload?.error?.message || payload?.message || `Request failed (${response.status})`);
+    return payload as T;
+  } catch (err: any) {
+    if (err instanceof TypeError && err.message.includes("fetch")) {
+      throw new Error("Cannot connect to SupportAI backend server. Please make sure backend is running on port 5000.");
+    }
+    throw err;
+  }
 }
 
 export async function signInClient(username: string, accessCode: string) {

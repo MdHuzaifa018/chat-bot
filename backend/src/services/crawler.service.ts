@@ -469,7 +469,7 @@ export class CrawlerService {
                     category: pageData.pageType || "website",
                     chunk_index: i,
                     is_published: true,
-                    source_type: "crawled_chunk",
+                    source_type: "crawled_page",
                     source_url: pageData.url,
                     content: chunks[i],
                     metadata: {
@@ -488,7 +488,7 @@ export class CrawlerService {
                     body: {
                       website_id: websiteId,
                       title: `${pageData.title} (Part ${i + 1})`,
-                      source_type: "crawled_chunk",
+                      source_type: "crawled_page",
                       source_url: pageData.url,
                       content: chunks[i],
                     },
