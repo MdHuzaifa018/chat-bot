@@ -202,8 +202,49 @@ export class CrawlerService {
           try {
             const html = await this.fetchHtml(currentUrl);
             const pageData = this.extractPageData(html, currentUrl);
+
+            // SPA deep text extraction fallback if HTML body is empty or sparse (< 50 chars)
+            if (pageData.cleanText.length < 50) {
+              const scriptMatches = Array.from(html.matchAll(/src=["']([^"']+\.js[^"']*)["']/gi)).map((m) => m[1]);
+              const localScripts = scriptMatches
+                .filter((s) => !s.startsWith("http") || s.includes(rootUrl.hostname))
+                .slice(0, 2);
+
+              const extractedSnippets: string[] = [];
+              for (const s of localScripts) {
+                try {
+                  const sUrl = new URL(s, rootUrl.origin).href;
+                  const sRes = await fetch(sUrl, { signal: AbortSignal.timeout(3000) });
+                  if (sRes.ok) {
+                    const js = await sRes.text();
+                    const strRegex = /["'`]([A-Z][^"'`\n\r]{10,200})["'`]/g;
+                    let sm: RegExpExecArray | null;
+                    while ((sm = strRegex.exec(js)) !== null) {
+                      const text = sm[1].trim();
+                      if (
+                        !text.includes("__") &&
+                        !text.includes("webpack") &&
+                        !text.includes("node_modules") &&
+                        !text.includes("function") &&
+                        /[a-z]/.test(text)
+                      ) {
+                        extractedSnippets.push(text);
+                        if (extractedSnippets.length >= 50) break;
+                      }
+                    }
+                  }
+                } catch {
+                  // ignore script fetch error
+                }
+              }
+
+              if (extractedSnippets.length > 0) {
+                pageData.cleanText = `${pageData.title}. Platform Overview & Features:\n${extractedSnippets.join(". ")}`;
+              }
+            }
+
             let internalLinks: string[] = [];
-            if (pageData.cleanText.length > 30) {
+            if (pageData.cleanText.length > 15) {
               internalLinks = this.extractInternalLinks(html, rootUrl, maxPages * 2);
             }
             return { success: true as const, pageData, internalLinks };
@@ -215,7 +256,7 @@ export class CrawlerService {
       );
 
       for (const item of batchResults) {
-        if (item.success && item.pageData.cleanText.length > 30) {
+        if (item.success && item.pageData.cleanText.length > 15) {
           if (results.length < maxPages) {
             results.push(item.pageData);
 

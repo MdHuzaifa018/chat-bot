@@ -47,24 +47,24 @@ export class WebsiteService {
     }
 
     const detectedTheme: DetectedTheme = homepageHtml
-      ? await ThemeDetectorService.extractTheme(homepageHtml, safeUrl)
+      ? ThemeDetectorService.extractTheme(homepageHtml, safeUrl)
       : {
-          primaryColor: "#254B35",
-          secondaryColor: "#3B82F6",
-          accentColor: "#A8C99B",
-          backgroundColor: "#FFFFFF",
-          cardBackgroundColor: "#F8FAFC",
-          textColor: "#1E293B",
-          borderColor: "#E2E8F0",
-          buttonColor: "#254B35",
-          buttonTextColor: "#FFFFFF",
-          fontFamily: "Inter, system-ui, sans-serif",
-          fontHeading: "Inter, system-ui, sans-serif",
-          logoUrl: `${safeUrl.origin}/favicon.ico`,
-          brandName: initialName,
-          confidence: { primaryColor: 0.5, fontFamily: 0.5, logoUrl: 0.5, brandName: 0.5 },
-          sources: { primaryColor: "Default", fontFamily: "Default", logoUrl: "Default", brandName: "Default" },
-        };
+        primaryColor: "#254B35",
+        secondaryColor: "#3B82F6",
+        accentColor: "#A8C99B",
+        backgroundColor: "#FFFFFF",
+        cardBackgroundColor: "#F8FAFC",
+        textColor: "#1E293B",
+        borderColor: "#E2E8F0",
+        buttonColor: "#254B35",
+        buttonTextColor: "#FFFFFF",
+        fontFamily: "Inter, system-ui, sans-serif",
+        fontHeading: "Inter, system-ui, sans-serif",
+        logoUrl: `${safeUrl.origin}/favicon.ico`,
+        brandName: initialName,
+        confidence: { primaryColor: 0.5, fontFamily: 0.5, logoUrl: 0.5, brandName: 0.5 },
+        sources: { primaryColor: "Default", fontFamily: "Default", logoUrl: "Default", brandName: "Default" },
+      };
 
     const finalName = name?.trim() || detectedTheme.brandName || domain;
 

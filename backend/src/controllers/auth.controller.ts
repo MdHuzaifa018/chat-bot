@@ -36,7 +36,7 @@ export async function clientLogin(req: Request, res: Response, next: NextFunctio
     }
     const { account, token } = await AccountAuthService.loginClient(username, accessCode);
     setSessionCookie(res, token);
-    res.status(200).json({ authenticated: true, account });
+    res.status(200).json({ authenticated: true, account, token });
   } catch (error) {
     next(error);
   }
@@ -51,7 +51,7 @@ export async function adminLogin(req: Request, res: Response, next: NextFunction
     }
     const { account, token } = await AccountAuthService.loginAdmin(email, password);
     setSessionCookie(res, token);
-    res.status(200).json({ authenticated: true, account });
+    res.status(200).json({ authenticated: true, account, token });
   } catch (error) {
     next(error);
   }
