@@ -69,6 +69,15 @@ export async function fetchAdminRequests() { return (await apiRequest<{ data: an
 export async function reviewRequest(id: string, decision: "approve" | "reject") {
   return (await apiRequest<{ data: any }>(`/admin/requests/${encodeURIComponent(id)}/${decision}`, { method: "POST" })).data;
 }
+export async function deleteRequest(id: string) {
+  return (await apiRequest<{ data: any }>(`/admin/requests/${encodeURIComponent(id)}`, { method: "DELETE" })).data;
+}
+export async function resetClientAccessCode(identifier: string) {
+  return (await apiRequest<{ data: { username: string; accessCode: string; email: string } }>("/admin/clients/reset-code", {
+    method: "POST",
+    body: JSON.stringify({ identifier }),
+  })).data;
+}
 export async function fetchEmployees() { return (await apiRequest<{ data: any[] }>("/admin/employees")).data; }
 export async function createEmployee(data: { name: string; email: string; role: string }) {
   return (await apiRequest<{ data: any }>("/admin/employees", { method: "POST", body: JSON.stringify(data) })).data;

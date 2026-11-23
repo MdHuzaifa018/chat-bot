@@ -12,8 +12,14 @@ import {
   ShieldCheck,
   AlertCircle,
   Copy,
+  Trash2,
 } from "lucide-react";
-import { fetchAdminRequests, reviewRequest } from "@/api/saasApi";
+import {
+  fetchAdminRequests,
+  reviewRequest,
+  deleteRequest,
+  resetClientAccessCode,
+} from "@/api/saasApi";
 
 type RequestStatus = "pending" | "accepted" | "rejected";
 
@@ -91,8 +97,12 @@ export default function ClientRequestsPage() {
     email: string;
     username: string;
     accessCode: string;
+    title?: string;
   } | null>(null);
   const [copied, setCopied] = useState(false);
+
+  // Reset Access Code State
+  const [isResetting, setIsResetting] = useState(false);
 
   const loadRequests = async () => {
     setIsLoading(true);
@@ -141,7 +151,6 @@ export default function ClientRequestsPage() {
     setError("");
 
     try {
-      // Call backend API if real ID or simulate for seed
       let resultUsername = generatedUsername;
       let resultCode = generatedCode;
 
@@ -158,6 +167,7 @@ export default function ClientRequestsPage() {
       );
 
       setCredentialsBanner({
+        title: "Account Provisioned Successfully!",
         email: selectedReq.email,
         username: resultUsername,
         accessCode: resultCode,
@@ -182,6 +192,37 @@ export default function ClientRequestsPage() {
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to reject request.");
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this request?")) return;
+    setError("");
+    try {
+      if (!id.startsWith("REQ-")) {
+        await deleteRequest(id);
+      }
+      setRequests((prev) => prev.filter((r) => r.id !== id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete request.");
+    }
+  };
+
+  const handleResetAccessCode = async (req: ClientRequest) => {
+    setIsResetting(true);
+    setError("");
+    try {
+      const res = await resetClientAccessCode(req.email);
+      setCredentialsBanner({
+        title: `New Access Code Generated for ${req.businessName}!`,
+        email: res.email,
+        username: res.username,
+        accessCode: res.accessCode,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not reset access code.");
+    } finally {
+      setIsResetting(false);
     }
   };
 
@@ -211,7 +252,7 @@ export default function ClientRequestsPage() {
             Client Requests
           </h2>
           <p className="text-xs text-[#647267] mt-0.5">
-            Review onboarding requests and provision verified Client Accounts.
+            Review onboarding requests, manage client tokens, and delete outdated entries.
           </p>
         </div>
         <button
@@ -231,18 +272,18 @@ export default function ClientRequestsPage() {
         </div>
       )}
 
-      {/* Generated Credentials Banner */}
+      {/* Generated / Reset Credentials Banner */}
       {credentialsBanner && (
         <div className="rounded-2xl border border-green-200 bg-green-50 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm animate-fadeIn">
           <div>
             <div className="flex items-center gap-2 text-green-900 font-semibold text-sm">
               <ShieldCheck className="w-4 h-4 text-green-700" />
-              <span>Account Provisioned Successfully!</span>
+              <span>{credentialsBanner.title || "Account Credentials Active"}</span>
             </div>
             <p className="text-xs text-green-800 mt-1">
               Email: <strong>{credentialsBanner.email}</strong> • Username:{" "}
-              <strong>{credentialsBanner.username}</strong> • Encrypted Code:{" "}
-              <strong className="font-mono">{credentialsBanner.accessCode}</strong>
+              <strong className="font-mono bg-white/70 px-1.5 py-0.5 rounded">{credentialsBanner.username}</strong> • Access Code:{" "}
+              <strong className="font-mono bg-white/70 px-1.5 py-0.5 rounded text-green-950 font-bold">{credentialsBanner.accessCode}</strong>
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -349,24 +390,45 @@ export default function ClientRequestsPage() {
                     </span>
                   </td>
                   <td className="px-6 py-4 text-right">
-                    {req.status === "pending" ? (
-                      <div className="inline-flex items-center gap-2">
+                    <div className="inline-flex items-center justify-end gap-2">
+                      {req.status === "pending" && (
+                        <>
+                          <button
+                            onClick={() => openApproveModal(req)}
+                            className="inline-flex items-center gap-1 px-3.5 py-1.5 bg-[#254B35] text-white rounded-full text-xs font-medium hover:bg-[#1e3d2a] cursor-pointer shadow-sm"
+                          >
+                            <Check className="w-3.5 h-3.5" /> Approve &amp; Mail
+                          </button>
+                          <button
+                            onClick={() => handleReject(req.id)}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-white text-red-600 border border-red-200 rounded-full text-xs font-medium hover:bg-red-50 cursor-pointer"
+                          >
+                            <X className="w-3.5 h-3.5" /> Reject
+                          </button>
+                        </>
+                      )}
+
+                      {req.status === "accepted" && (
                         <button
-                          onClick={() => openApproveModal(req)}
-                          className="inline-flex items-center gap-1 px-3.5 py-1.5 bg-[#254B35] text-white rounded-full text-xs font-medium hover:bg-[#1e3d2a] cursor-pointer shadow-sm"
+                          onClick={() => handleResetAccessCode(req)}
+                          disabled={isResetting}
+                          title="Generate new Access Code for this client"
+                          className="inline-flex items-center gap-1 px-3 py-1.5 bg-[#F1F7EF] text-[#254B35] border border-[#A8C99B] rounded-full text-xs font-medium hover:bg-[#E5F0E1] cursor-pointer"
                         >
-                          <Check className="w-3.5 h-3.5" /> Approve &amp; Mail
+                          <KeyRound className="w-3.5 h-3.5" /> Reset Code
                         </button>
-                        <button
-                          onClick={() => handleReject(req.id)}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 bg-white text-red-600 border border-red-200 rounded-full text-xs font-medium hover:bg-red-50 cursor-pointer"
-                        >
-                          <X className="w-3.5 h-3.5" /> Reject
-                        </button>
-                      </div>
-                    ) : (
-                      <span className="text-xs text-[#647267] font-medium">Processed</span>
-                    )}
+                      )}
+
+                      {/* Delete Button */}
+                      <button
+                        onClick={() => handleDelete(req.id)}
+                        title="Delete this request"
+                        className="p-1.5 text-[#647267] hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                        aria-label="Delete request"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

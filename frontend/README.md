@@ -15,3 +15,11 @@ Copy `.env.example` to `.env.local`; `NEXT_PUBLIC_API_URL` should point to the b
 
 
 pIrRtxUZFKaYgJ6MHMVk3ai6UtWrwNmk 
+
+CR-UpNR8sNbXAfNpKRa
+marketing
+
+SupportAI Client Access:
+Username: marketing
+Access Code: CR-jbuaSfEMbKzNs9n6HZ
+Login URL: http://localhost:3000/

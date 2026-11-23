@@ -151,6 +151,55 @@ export class AdminController {
     }
   }
 
+  static async deleteRequest(req: AccountAuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const requestId = String(req.params.id);
+      await supabaseRequest(`client_access_requests?id=eq.${encodeURIComponent(requestId)}`, {
+        method: "DELETE",
+        prefer: "return=minimal",
+      });
+      res.status(200).json({ data: { id: requestId, deleted: true } });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async resetClientAccessCode(req: AccountAuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const identifier = String(req.body?.identifier ?? "").trim();
+      if (!identifier) {
+        throw new ApiError(400, "IDENTIFIER_REQUIRED", "Email or username is required.");
+      }
+
+      const rows = await supabaseRequest<Array<{ id: string; username: string; email: string }>>(
+        `client_accounts?or=(email.eq.${encodeURIComponent(identifier)},username.eq.${encodeURIComponent(identifier)})&select=id,username,email&limit=1`
+      );
+      const client = rows[0];
+      if (!client) {
+        throw new ApiError(404, "CLIENT_NOT_FOUND", "Client account not found.");
+      }
+
+      const accessCode = generateAccessCode();
+      const accessCodeHash = await hashPassword(accessCode);
+
+      await supabaseRequest(`client_accounts?id=eq.${encodeURIComponent(client.id)}`, {
+        method: "PATCH",
+        prefer: "return=minimal",
+        body: { access_code_hash: accessCodeHash },
+      });
+
+      res.status(200).json({
+        data: {
+          username: client.username,
+          accessCode,
+          email: client.email,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   static async listEmployees(_req: AccountAuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const rows = await supabaseRequest<Array<Record<string, unknown>>>(

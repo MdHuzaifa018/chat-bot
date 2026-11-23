@@ -8,6 +8,8 @@ adminRouter.get("/overview", requireAdminAuth, requirePermission("viewTelemetry"
 adminRouter.get("/requests", requireAdminAuth, requireAnyPermission(["acceptRequests", "rejectRequests"]), AdminController.listRequests);
 adminRouter.post("/requests/:id/approve", requireAdminAuth, requirePermission("acceptRequests"), AdminController.approveRequest);
 adminRouter.post("/requests/:id/reject", requireAdminAuth, requirePermission("rejectRequests"), AdminController.rejectRequest);
+adminRouter.delete("/requests/:id", requireAdminAuth, requireAnyPermission(["acceptRequests", "rejectRequests"]), AdminController.deleteRequest);
+adminRouter.post("/clients/reset-code", requireAdminAuth, requirePermission("acceptRequests"), AdminController.resetClientAccessCode);
 adminRouter.get("/employees", requireAdminAuth, requirePermission("manageTeam"), AdminController.listEmployees);
 adminRouter.post("/employees", requireAdminAuth, requirePermission("manageTeam"), AdminController.createEmployee);
 adminRouter.patch("/employees/:id/permissions", requireAdminAuth, requirePermission("manageTeam"), AdminController.updateEmployeePermissions);
