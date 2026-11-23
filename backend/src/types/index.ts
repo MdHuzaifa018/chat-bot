@@ -73,6 +73,8 @@ export interface CrawledPage {
   title?: string | null;
   description?: string | null;
   clean_text: string;
+  page_type?: string;
+  content_hash?: string;
   status: "crawled" | "indexed" | "failed";
   created_at: string;
 }
@@ -81,9 +83,13 @@ export interface KnowledgeDocument {
   id: string;
   website_id: string;
   title: string;
-  source_type: "crawled_page" | "manual_doc" | "faq";
+  slug?: string;
+  chunk_index?: number;
+  source_type: "crawled_chunk" | "crawled_page" | "manual_doc" | "faq";
   source_url?: string | null;
+  source_heading?: string | null;
   content: string;
+  metadata?: Record<string, unknown>;
   created_at: string;
 }
 
@@ -96,10 +102,16 @@ export interface ChatbotConfig {
   placeholder_text: string;
   primary_color: string;
   secondary_color: string;
+  accent_color?: string;
   background_color: string;
   text_color: string;
+  border_color?: string;
+  button_color?: string;
+  button_text_color?: string;
   font_family: string;
+  font_heading?: string;
   logo_url?: string | null;
+  theme_confidence?: Record<string, number>;
   position: "bottom-right" | "bottom-left";
   allowed_origins: string[];
   is_published: boolean;

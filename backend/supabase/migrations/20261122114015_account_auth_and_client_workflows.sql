@@ -1,4 +1,13 @@
 -- Password/access-code authentication and tenant ownership for the current UI.
+create table if not exists public.suggested_questions (
+  id uuid primary key default gen_random_uuid(),
+  website_id uuid references public.websites(id) on delete cascade,
+  question_text text not null,
+  answer text,
+  display_order integer not null default 0,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now()
+);
 alter table public.suggested_questions add column if not exists answer text;
 alter table public.chatbot_configs alter column allowed_origins set default array[]::text[];
 

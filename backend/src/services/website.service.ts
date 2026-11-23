@@ -1,7 +1,7 @@
 import { supabaseRequest } from "../utils/supabase.js";
 import { ApiError } from "../utils/apiError.js";
 import { CrawlerService } from "./crawler.service.js";
-import { ThemeDetectorService } from "./themeDetector.service.js";
+import { ThemeDetectorService, type DetectedTheme } from "./themeDetector.service.js";
 import { GeminiService } from "./gemini.service.js";
 import { randomBytes } from "node:crypto";
 import { env } from "../config/env.js";
@@ -30,6 +30,7 @@ export class WebsiteService {
   }): Promise<{
     website: Website;
     chatbotConfig: ChatbotConfig;
+    detectedTheme: DetectedTheme;
     pagesCrawled: number;
     suggestedQuestions: string[];
   }> {
@@ -45,16 +46,24 @@ export class WebsiteService {
       // Continue even if initial fetch is delayed
     }
 
-    const detectedTheme = homepageHtml
+    const detectedTheme: DetectedTheme = homepageHtml
       ? ThemeDetectorService.extractTheme(homepageHtml, safeUrl)
       : {
-          primaryColor: "#0F172A",
+          primaryColor: "#254B35",
           secondaryColor: "#3B82F6",
+          accentColor: "#A8C99B",
           backgroundColor: "#FFFFFF",
+          cardBackgroundColor: "#F8FAFC",
           textColor: "#1E293B",
+          borderColor: "#E2E8F0",
+          buttonColor: "#254B35",
+          buttonTextColor: "#FFFFFF",
           fontFamily: "Inter, system-ui, sans-serif",
+          fontHeading: "Inter, system-ui, sans-serif",
           logoUrl: `${safeUrl.origin}/favicon.ico`,
           brandName: initialName,
+          confidence: { primaryColor: 0.5, fontFamily: 0.5, logoUrl: 0.5, brandName: 0.5 },
+          sources: { primaryColor: "Default", fontFamily: "Default", logoUrl: "Default", brandName: "Default" },
         };
 
     const finalName = name?.trim() || detectedTheme.brandName || domain;
@@ -90,12 +99,18 @@ export class WebsiteService {
         placeholder_text: "Ask anything about our services...",
         primary_color: detectedTheme.primaryColor,
         secondary_color: detectedTheme.secondaryColor,
-        background_color: "#FFFFFF",
-        text_color: "#1E293B",
+        accent_color: detectedTheme.accentColor || "#A8C99B",
+        background_color: detectedTheme.backgroundColor || "#FFFFFF",
+        text_color: detectedTheme.textColor || "#1E293B",
+        border_color: detectedTheme.borderColor || "#E2E8F0",
+        button_color: detectedTheme.buttonColor || detectedTheme.primaryColor,
+        button_text_color: detectedTheme.buttonTextColor || "#FFFFFF",
         font_family: detectedTheme.fontFamily,
+        font_heading: detectedTheme.fontHeading || detectedTheme.fontFamily,
         logo_url: detectedTheme.logoUrl,
+        theme_confidence: detectedTheme.confidence,
         position: "bottom-right",
-        allowed_origins: Array.from(new Set([safeUrl.origin, env.security.allowedOrigin, "http://localhost:5000"])),
+        allowed_origins: Array.from(new Set([safeUrl.origin, env.security.allowedOrigin, "http://localhost:5000", "http://localhost:3000"])),
         is_published: true,
       },
     });
@@ -106,11 +121,11 @@ export class WebsiteService {
       throw new ApiError(503, "CHATBOT_CONFIG_CREATE_FAILED", "Could not create chatbot configuration for this website.");
     }
 
-    // 4. Crawl pages (homepage + internal links)
+    // 4. Crawl pages (homepage + sitemap + internal links)
     let crawledPages: Array<{ title: string; cleanText: string; url: string }> = [];
     let crawlStatus: Website["crawl_status"] = "failed";
     try {
-      crawledPages = await CrawlerService.crawlWebsite(website.id, safeUrl.href, 6);
+      crawledPages = await CrawlerService.crawlWebsite(website.id, safeUrl.href, 8);
       crawlStatus = crawledPages.length > 0 ? "completed" : "failed";
       await supabaseRequest(`websites?id=eq.${website.id}`, {
         method: "PATCH",
@@ -156,6 +171,7 @@ export class WebsiteService {
         crawl_status: crawlStatus,
       },
       chatbotConfig,
+      detectedTheme,
       pagesCrawled: crawledPages.length,
       suggestedQuestions: questions,
     };

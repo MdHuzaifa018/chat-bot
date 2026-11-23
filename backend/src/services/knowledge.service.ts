@@ -1,77 +1,110 @@
 import { supabaseRequest } from "../utils/supabase.js";
 
 interface KnowledgeChunkRpcRow {
-  chunk_id: string;
-  document_title: string;
-  document_category: string;
+  id?: string;
+  title?: string;
+  source_heading?: string;
+  source_url?: string;
   content: string;
+  rank?: number;
 }
 
 const IN_MEMORY_INSTITUTIONAL_DOCS = [
   {
-    title: "Curious Rabit AI Solutions Platform Overview",
+    title: "SupportAI Platform Overview",
     category: "general",
-    keywords: ["services", "about", "company", "what do you do", "who are you", "curious rabit"],
+    keywords: ["services", "about", "company", "what do you do", "who are you", "supportai"],
     content:
-      "Curious Rabit is an AI solutions company engineering focused, high-impact products for real-world business operations. We provide AI automation, client support chatbots, workflow integrations, and cloud engineering services.",
+      "SupportAI is an AI Website Support Chatbot SaaS platform that extracts brand identity, crawls website pages, and trains custom Gemini-powered customer support chatbots for websites.",
   },
   {
-    title: "Subscription and Pricing Plans",
+    title: "Pricing and Subscription Plans",
     category: "pricing",
     keywords: ["price", "pricing", "cost", "plan", "subscription", "starter", "tier", "rate"],
     content:
-      "Curious Rabit offers transparent SaaS pricing tiers: Starter Plan begins at $29/month (includes basic support chatbot and up to 1,000 monthly conversations), Professional Plan is $99/month (includes multi-channel routing, advanced analytics, and custom LLM fine-tuning), and Enterprise custom tiers are tailored for high-volume enterprise workloads.",
+      "SupportAI offers flexible multi-tenant tiers: Starter Plan for small business websites, Pro Plan for fast-growing SaaS products, and Enterprise custom tiers for high-volume customer support operations.",
   },
   {
-    title: "Client Portal Login & Access",
-    category: "access",
-    keywords: ["login", "portal", "account", "access", "signin", "password"],
+    title: "Website Setup & Crawling",
+    category: "setup",
+    keywords: ["setup", "crawl", "crawler", "embed", "widget", "code", "install"],
     content:
-      "Clients sign in to the SupportAI portal with their assigned username and access code. Public visitors can use embedded chat without creating an account.",
-  },
-  {
-    title: "Chatbot Usage Limits & Quota",
-    category: "policy",
-    keywords: ["limit", "quota", "daily", "messages", "how many", "429"],
-    content:
-      "To ensure fair usage and prevent abuse, public visitor chat sessions are limited to 8 messages per 24 hours. Messages are capped at 400 characters each. If a visitor exceeds this limit, they receive an official 429 quota notice: 'You have reached today's chat limit. Please check back tomorrow or contact support.'",
-  },
-  {
-    title: "Support Escalation & Contact Information",
-    category: "support",
-    keywords: ["contact", "support", "help", "email", "phone", "agent", "human", "talk"],
-    content:
-      "For personalized human assistance or technical escalation, contact the official support desk at support@curiousrabit.com or phone +1-800-CURIOUS during operating hours (Mon-Fri 9:00 AM - 6:00 PM EST).",
+      "To set up SupportAI on your website, enter your website URL in Chatbot Settings. The system automatically detects your brand theme, colors, fonts, and crawls public pages to generate an instant AI assistant and embed snippet.",
   },
 ];
 
 export class KnowledgeService {
   /**
    * Retrieve relevant knowledge base chunks for grounding Gemini responses.
-   * Checks Supabase RPC first, falls back gracefully to verified institutional documents.
+   * Scopes search strictly to the specific website when websiteId is provided.
    */
-  static async retrieveContext(query: string, limit = 3): Promise<string[]> {
+  static async retrieveContext(query: string, websiteId?: string, limit = 4): Promise<string[]> {
     const cleanQuery = query.toLowerCase().trim();
 
-    // 1. Try Supabase PostgREST RPC if database table is available
+    // 1. Scoped Website Knowledge Search
+    if (websiteId) {
+      try {
+        // Try RPC match_website_knowledge
+        const rpcResults = await supabaseRequest<KnowledgeChunkRpcRow[]>("rpc/match_website_knowledge", {
+          method: "POST",
+          body: {
+            p_website_id: websiteId,
+            p_query: cleanQuery,
+            p_limit: limit,
+          },
+          timeoutMs: 3500,
+        });
+
+        if (Array.isArray(rpcResults) && rpcResults.length > 0) {
+          return rpcResults.map((r) => `[Document: ${r.title || "Website Page"}]\n${r.content}`);
+        }
+      } catch {
+        // RPC might not be deployed yet; try direct table query
+      }
+
+      try {
+        const docs = await supabaseRequest<Array<{ title: string; content: string }>>(
+          `knowledge_documents?website_id=eq.${encodeURIComponent(websiteId)}&select=title,content&order=created_at.desc&limit=15`
+        );
+        if (Array.isArray(docs) && docs.length > 0) {
+          // Score docs by query keyword matching
+          const tokens = cleanQuery.split(/\s+/).filter((t) => t.length > 2);
+          const scored = docs.map((d) => {
+            let score = 0;
+            const textLower = (d.title + " " + d.content).toLowerCase();
+            for (const t of tokens) {
+              if (textLower.includes(t)) score += 2;
+            }
+            return { d, score };
+          });
+          scored.sort((a, b) => b.score - a.score);
+          const top = scored.slice(0, limit).map((s) => `[${s.d.title}]: ${s.d.content}`);
+          if (top.length > 0) return top;
+        }
+      } catch {
+        // continue
+      }
+    }
+
+    // 2. Global RPC match_knowledge_chunks fallback
     try {
-      const rpcResults = await supabaseRequest<KnowledgeChunkRpcRow[]>("rpc/match_knowledge_chunks", {
+      const globalResults = await supabaseRequest<Array<{ document_title: string; content: string }>>("rpc/match_knowledge_chunks", {
         method: "POST",
         body: {
           p_query: cleanQuery,
           p_limit: limit,
         },
-        timeoutMs: 3000,
+        timeoutMs: 2500,
       });
 
-      if (Array.isArray(rpcResults) && rpcResults.length > 0) {
-        return rpcResults.map((r) => `[${r.document_title} - ${r.document_category}]: ${r.content}`);
+      if (Array.isArray(globalResults) && globalResults.length > 0) {
+        return globalResults.map((r) => `[${r.document_title}]: ${r.content}`);
       }
     } catch {
-      // PostgREST RPC might not be deployed yet; fallback to in-memory verified documents
+      // ignore
     }
 
-    // 2. In-memory verified document retrieval
+    // 3. In-memory platform fallback
     const queryTokens = cleanQuery
       .split(/\s+/)
       .map((t) => t.replace(/[^a-z0-9]/g, ""))
