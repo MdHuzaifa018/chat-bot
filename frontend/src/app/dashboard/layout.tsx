@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Bot, Sliders, Code2, LogOut, Menu, X } from "lucide-react";
 import { fetchCurrentAccount, signOut } from "@/api/saasApi";
+import { LogoutConfirmModal } from "@/components/LogoutConfirmModal";
 
 export default function DashboardLayout({
   children,
@@ -30,9 +31,18 @@ export default function DashboardLayout({
     { href: "/dashboard/setup-code", label: "Setup Code", icon: Code2 },
   ];
 
-  const handleSignOut = async () => {
-    await signOut().catch(() => undefined);
-    router.replace("/");
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  const confirmSignOut = async () => {
+    setIsLoggingOut(true);
+    try {
+      await signOut().catch(() => undefined);
+      router.replace("/");
+    } finally {
+      setIsLoggingOut(false);
+      setShowLogoutModal(false);
+    }
   };
 
   if (checkingAuth) return <div className="min-h-screen grid place-items-center bg-[#F1F7EF] text-sm text-[#647267]">Checking access…</div>;
@@ -74,7 +84,7 @@ export default function DashboardLayout({
 
         <div className="p-4 border-t border-[#E5F0E1]">
           <button
-            onClick={handleSignOut}
+            onClick={() => setShowLogoutModal(true)}
             className="flex items-center gap-3 px-4 py-3 w-full text-sm font-medium text-[#647267] hover:bg-red-50 hover:text-red-600 rounded-xl transition-colors cursor-pointer"
           >
             <LogOut className="w-5 h-5" />
@@ -120,8 +130,11 @@ export default function DashboardLayout({
               })}
             </nav>
             <button
-              onClick={handleSignOut}
-              className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-red-600 rounded-xl"
+              onClick={() => {
+                setMobileOpen(false);
+                setShowLogoutModal(true);
+              }}
+              className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-red-600 rounded-xl cursor-pointer"
             >
               <LogOut className="w-5 h-5" />
               Sign Out
@@ -133,6 +146,16 @@ export default function DashboardLayout({
           />
         </div>
       )}
+
+      {/* Custom Logout Confirmation Modal */}
+      <LogoutConfirmModal
+        isOpen={showLogoutModal}
+        onClose={() => setShowLogoutModal(false)}
+        onConfirm={confirmSignOut}
+        isLoading={isLoggingOut}
+        title="Sign out of Client Dashboard?"
+        description="Are you sure you want to log out? You will need your access code to log back in."
+      />
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0">

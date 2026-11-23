@@ -25,12 +25,13 @@ export function BrowserStorageCleanup() {
         }
       }
 
-      // 2. Purge legacy Clerk keys from localStorage
+      // 2. Purge legacy Clerk keys and legacy localStorage auth tokens
       if (typeof window !== "undefined" && window.localStorage) {
+        localStorage.removeItem("supportai_token");
         const keysToRemove: string[] = [];
         for (let i = 0; i < localStorage.length; i++) {
           const key = localStorage.key(i);
-          if (key && (key.toLowerCase().includes("clerk") || key.startsWith("__clerk"))) {
+          if (key && (key.toLowerCase().includes("clerk") || key.startsWith("__clerk") || key === "supportai_token")) {
             keysToRemove.push(key);
           }
         }

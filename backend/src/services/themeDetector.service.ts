@@ -13,6 +13,7 @@ export interface DetectedTheme {
   logoUrl?: string;
   faviconUrl?: string;
   brandName?: string;
+  suggestedColors?: string[];
   confidence?: Record<string, number>;
   sources?: Record<string, string>;
 }
@@ -74,8 +75,8 @@ export class ThemeDetectorService {
     // 4. Extract CSS variables
     const cssVariables = this.extractCssVariables(combinedCss);
 
-    // 5. Analyze Colors (Vibrant Primary/Secondary and Background)
-    const { primaryColor, secondaryColor, backgroundColor, textColor } = this.analyzeColors(
+    // 5. Analyze Colors (Vibrant Primary/Secondary, Background & Full Palette)
+    const { primaryColor, secondaryColor, accentColor, backgroundColor, textColor, suggestedColors } = this.analyzeColors(
       html,
       combinedCss,
       cssVariables
@@ -84,7 +85,6 @@ export class ThemeDetectorService {
     // 6. Extract Font Family
     const fontFamily = this.extractFontFamily(html, combinedCss, cssVariables);
 
-    const accentColor = secondaryColor || "#A8C99B";
     const buttonColor = primaryColor;
     const buttonTextColor = "#FFFFFF";
     const borderColor = backgroundColor === "#FFFFFF" ? "#E2E8F0" : "#334155";
@@ -104,8 +104,9 @@ export class ThemeDetectorService {
       fontHeading,
       logoUrl,
       brandName,
+      suggestedColors,
       confidence: {
-        primaryColor: 0.9,
+        primaryColor: 0.95,
         fontFamily: 0.85,
         logoUrl: 0.8,
         brandName: 0.9,
@@ -157,14 +158,14 @@ export class ThemeDetectorService {
   }
 
   /**
-   * Fetches external stylesheets in parallel with a 3-second timeout per sheet.
+   * Fetches external stylesheets in parallel with a 1.5-second timeout per sheet.
    */
   private static async fetchExternalStylesheets(urls: string[]): Promise<string[]> {
     if (urls.length === 0) return [];
 
     const fetchPromises = urls.map(async (url) => {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000);
+      const timeoutId = setTimeout(() => controller.abort(), 1500);
       try {
         const res = await fetch(url, {
           method: "GET",
@@ -208,6 +209,101 @@ export class ThemeDetectorService {
   }
 
   /**
+   * Converts any RGB, RGBA, HSL, or raw RGB string into normalized Hex #RRGGBB.
+   */
+  private static parseColorToHex(raw: string): string | null {
+    if (!raw) return null;
+    const clean = raw.trim();
+
+    // 1. Direct hex
+    if (/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(clean)) {
+      return this.normalizeHex(clean);
+    }
+
+    // 2. rgb(r, g, b) or rgba(r, g, b, a)
+    const rgbMatch = clean.match(/rgba?\s*\(\s*(\d{1,3})\s*[, ]\s*(\d{1,3})\s*[, ]\s*(\d{1,3})/i);
+    if (rgbMatch) {
+      const r = Math.min(255, parseInt(rgbMatch[1], 10));
+      const g = Math.min(255, parseInt(rgbMatch[2], 10));
+      const b = Math.min(255, parseInt(rgbMatch[3], 10));
+      return this.rgbToHex(r, g, b);
+    }
+
+    // 3. Space-separated RGB numbers: e.g. "37 99 235" (common in Tailwind / shadcn)
+    const spaceRgb = clean.match(/^(\d{1,3})\s+(\d{1,3})\s+(\d{1,3})$/);
+    if (spaceRgb) {
+      const r = Math.min(255, parseInt(spaceRgb[1], 10));
+      const g = Math.min(255, parseInt(spaceRgb[2], 10));
+      const b = Math.min(255, parseInt(spaceRgb[3], 10));
+      return this.rgbToHex(r, g, b);
+    }
+
+    // 4. hsl(h, s%, l%)
+    const hslMatch = clean.match(/hsla?\s*\(\s*([\d.]+)\s*[, ]\s*([\d.]+)%?\s*[, ]\s*([\d.]+)%?/i);
+    if (hslMatch) {
+      const h = parseFloat(hslMatch[1]);
+      const s = parseFloat(hslMatch[2]) / 100;
+      const l = parseFloat(hslMatch[3]) / 100;
+      const rgb = this.hslToRgb(h, s, l);
+      return this.rgbToHex(rgb.r, rgb.g, rgb.b);
+    }
+
+    return null;
+  }
+
+  private static rgbToHex(r: number, g: number, b: number): string {
+    return `#${[r, g, b].map((x) => x.toString(16).padStart(2, "0")).join("")}`.toUpperCase();
+  }
+
+  private static hslToRgb(h: number, s: number, l: number): RgbColor {
+    const c = (1 - Math.abs(2 * l - 1)) * s;
+    const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+    const m = l - c / 2;
+    let r = 0, g = 0, b = 0;
+
+    if (h >= 0 && h < 60) { r = c; g = x; b = 0; }
+    else if (h >= 60 && h < 120) { r = x; g = c; b = 0; }
+    else if (h >= 120 && h < 180) { r = 0; g = c; b = x; }
+    else if (h >= 180 && h < 240) { r = 0; g = x; b = c; }
+    else if (h >= 240 && h < 300) { r = x; g = 0; b = c; }
+    else if (h >= 300 && h < 360) { r = c; g = 0; b = x; }
+
+    return {
+      r: Math.round((r + m) * 255),
+      g: Math.round((g + m) * 255),
+      b: Math.round((b + m) * 255),
+    };
+  }
+
+  /**
+   * Tailwind standard palette map for utility class detection
+   */
+  private static readonly TAILWIND_COLORS: Record<string, string> = {
+    "emerald-600": "#059669",
+    "emerald-500": "#10B981",
+    "emerald-700": "#047857",
+    "green-600": "#16A34A",
+    "green-500": "#22C55E",
+    "teal-600": "#0D9488",
+    "teal-500": "#14B8A6",
+    "cyan-600": "#0891B2",
+    "sky-600": "#0284C7",
+    "blue-600": "#2563EB",
+    "blue-500": "#3B82F6",
+    "blue-700": "#1D4ED8",
+    "indigo-600": "#4F46E5",
+    "indigo-500": "#6366F1",
+    "violet-600": "#7C3AED",
+    "purple-600": "#9333EA",
+    "purple-500": "#A855F7",
+    "fuchsia-600": "#C026D3",
+    "pink-600": "#DB2777",
+    "rose-600": "#E11D48",
+    "orange-500": "#F97316",
+    "amber-500": "#F59E0B",
+  };
+
+  /**
    * Frequency and vibrancy analysis for colors
    */
   private static analyzeColors(
@@ -217,30 +313,47 @@ export class ThemeDetectorService {
   ): {
     primaryColor: string;
     secondaryColor: string;
+    accentColor: string;
     backgroundColor: string;
     textColor: string;
+    suggestedColors: string[];
   } {
     const scores = new Map<string, number>();
 
-    const addScore = (hex: string, points: number) => {
-      const normalized = this.normalizeHex(hex);
-      if (normalized) {
-        scores.set(normalized, (scores.get(normalized) || 0) + points);
+    const addScore = (colorVal: string | null | undefined, points: number) => {
+      if (!colorVal) return;
+      const hex = this.parseColorToHex(colorVal);
+      if (hex) {
+        scores.set(hex, (scores.get(hex) || 0) + points);
       }
     };
 
-    // 1. Meta theme-color (highest initial confidence)
-    const metaThemeColor = html.match(/<meta[^>]*name=["']theme-color["'][^>]*content=["']([^"']+)["']/i);
+    // 1. Meta theme-color & msapplication-TileColor (highest brand confidence)
+    const metaThemeColor = html.match(/<meta[^>]*name=["'](?:theme-color|msapplication-TileColor|msapplication-navbutton-color)["'][^>]*content=["']([^"']+)["']/i);
     let metaHex: string | null = null;
-    if (metaThemeColor && this.isValidHexColor(metaThemeColor[1].trim())) {
-      metaHex = this.normalizeHex(metaThemeColor[1].trim());
+    if (metaThemeColor && metaThemeColor[1]) {
+      metaHex = this.parseColorToHex(metaThemeColor[1].trim());
       if (metaHex) {
-        addScore(metaHex, 20);
+        addScore(metaHex, 35);
       }
     }
 
-    // 2. CSS variables scoring
+    // 2. CSS variables scoring (supports hex, rgb, hsl, space-separated channels)
     for (const [varName, varValue] of cssVariables.entries()) {
+      const parsedHex = this.parseColorToHex(varValue);
+      if (parsedHex) {
+        if (/primary|brand|main|theme/i.test(varName)) {
+          addScore(parsedHex, 30);
+        } else if (/secondary|accent/i.test(varName)) {
+          addScore(parsedHex, 22);
+        } else if (/button|cta|action/i.test(varName)) {
+          addScore(parsedHex, 20);
+        } else {
+          addScore(parsedHex, 6);
+        }
+      }
+
+      // Also search for any embedded hex strings within the CSS variable value
       const hexMatches = varValue.match(/#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b/g);
       if (hexMatches) {
         for (const hex of hexMatches) {
@@ -262,15 +375,28 @@ export class ThemeDetectorService {
       addScore(m[0], 1);
     }
 
-    // 4. Background Color Detection (e.g. #070814 for Vibefest or dark mode)
+    // 4. Scan SVG fill and stroke colors
+    const svgFills = combinedSource.matchAll(/(?:fill|stroke)=["'](#[0-9a-fA-F]{3,6}|rgba?\([^)]+\)|hsla?\([^)]+\))["']/gi);
+    for (const m of svgFills) {
+      addScore(m[1], 4);
+    }
+
+    // 5. Scan Tailwind utility classes (e.g. bg-blue-600, text-emerald-500)
+    for (const [cls, hex] of Object.entries(this.TAILWIND_COLORS)) {
+      if (html.includes(cls)) {
+        addScore(hex, 12);
+      }
+    }
+
+    // 6. Background Color Detection (e.g. #070814 for dark themes, or #FFFFFF / #F8FAFC)
     let detectedBg: string | null = null;
 
     // Check CSS variables for background
     for (const [varName, varValue] of cssVariables.entries()) {
       if (/^(background|bg|body-bg|color-bg|background-color)$/i.test(varName)) {
-        const bgHex = varValue.match(/#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b/);
-        if (bgHex) {
-          detectedBg = this.normalizeHex(bgHex[0]);
+        const bg = this.parseColorToHex(varValue);
+        if (bg) {
+          detectedBg = bg;
           break;
         }
       }
@@ -279,11 +405,11 @@ export class ThemeDetectorService {
     // Check body or html background rules in CSS
     if (!detectedBg) {
       const bodyBgMatch =
-        css.match(/body\s*\{[^}]*background(?:-color)?:\s*(#[0-9a-fA-F]{3,6})\b/i) ||
-        css.match(/html\s*\{[^}]*background(?:-color)?:\s*(#[0-9a-fA-F]{3,6})\b/i) ||
-        css.match(/:root\s*\{[^}]*--background:\s*(#[0-9a-fA-F]{3,6})\b/i);
+        css.match(/body\s*\{[^}]*background(?:-color)?:\s*([#a-zA-Z0-9(),\s-]+)[;}!]/i) ||
+        css.match(/html\s*\{[^}]*background(?:-color)?:\s*([#a-zA-Z0-9(),\s-]+)[;}!]/i) ||
+        css.match(/:root\s*\{[^}]*--background:\s*([#a-zA-Z0-9(),\s-]+)[;}!]/i);
       if (bodyBgMatch && bodyBgMatch[1]) {
-        detectedBg = this.normalizeHex(bodyBgMatch[1]);
+        detectedBg = this.parseColorToHex(bodyBgMatch[1]);
       }
     }
 
@@ -292,22 +418,6 @@ export class ThemeDetectorService {
       const twBgMatch = html.match(/bg-\[#(0-9a-fA-F]{3,6})\]/i);
       if (twBgMatch && twBgMatch[1]) {
         detectedBg = this.normalizeHex(`#${twBgMatch[1]}`);
-      }
-    }
-
-    // Check frequency of background-declared hex colors (e.g. background: #070814)
-    if (!detectedBg) {
-      const bgHexCounts = new Map<string, number>();
-      const bgMatches = combinedSource.matchAll(/(?:background|background-color|bg):\s*(#[0-9a-fA-F]{3,6})\b/gi);
-      for (const m of bgMatches) {
-        const norm = this.normalizeHex(m[1]);
-        if (norm) {
-          bgHexCounts.set(norm, (bgHexCounts.get(norm) || 0) + 1);
-        }
-      }
-      if (bgHexCounts.size > 0) {
-        const sortedBg = Array.from(bgHexCounts.entries()).sort((a, b) => b[1] - a[1]);
-        detectedBg = sortedBg[0][0];
       }
     }
 
@@ -320,20 +430,19 @@ export class ThemeDetectorService {
       const rgb = this.hexToRgb(detectedBg);
       if (rgb) {
         const brightness = (rgb.r + rgb.g + rgb.b) / 3;
-        // If dark background (e.g. #070814 where brightness ~12)
         if (brightness < 128) {
-          textColor = "#F8FAFC";
+          textColor = "#F8FAFC"; // Dark mode contrast
         } else {
-          textColor = "#1E293B";
+          textColor = "#1E293B"; // Light mode contrast
         }
       }
     }
 
-    // 5. Filter vibrant non-neutral colors for primary & secondary branding
+    // 7. Filter vibrant non-neutral colors for primary & secondary branding
     const vibrantCandidates: Array<{ hex: string; score: number }> = [];
 
     for (const [hex, score] of scores.entries()) {
-      // Avoid using the background color as the primary/secondary brand color
+      // Exclude background color from brand primary
       if (detectedBg && hex === detectedBg) continue;
 
       const rgb = this.hexToRgb(hex);
@@ -345,39 +454,66 @@ export class ThemeDetectorService {
     // Sort by weighted score descending
     vibrantCandidates.sort((a, b) => b.score - a.score);
 
-    // Pick top vibrant color as primary
-    let primaryColor = "#0F172A"; // Default slate-900
-    let secondaryColor = "#3B82F6"; // Default blue-500
+    // Pick top vibrant colors
+    let primaryColor = "#254B35"; // Default brand green
+    let secondaryColor = "#3B82F6"; // Default blue
+    let accentColor = "#A855F7"; // Default purple
 
     if (vibrantCandidates.length > 0) {
       primaryColor = vibrantCandidates[0].hex;
 
-      // Find secondary color that is visually distinct from primary
+      // Find secondary color distinct from primary
       const primaryRgb = this.hexToRgb(primaryColor);
       for (let i = 1; i < vibrantCandidates.length; i++) {
-        const candidate = vibrantCandidates[i];
-        const candidateRgb = this.hexToRgb(candidate.hex);
-        if (primaryRgb && candidateRgb && this.colorDistance(primaryRgb, candidateRgb) > 40) {
-          secondaryColor = candidate.hex;
+        const cand = vibrantCandidates[i];
+        const candRgb = this.hexToRgb(cand.hex);
+        if (primaryRgb && candRgb && this.colorDistance(primaryRgb, candRgb) > 40) {
+          secondaryColor = cand.hex;
           break;
         }
       }
 
-      // If no distinct secondary was found, check if metaHex or fallback differs
-      if (secondaryColor === primaryColor || secondaryColor === "#3B82F6") {
-        if (metaHex && metaHex !== primaryColor && metaHex !== detectedBg) {
-          secondaryColor = metaHex;
+      // Find accent color distinct from primary and secondary
+      const secRgb = this.hexToRgb(secondaryColor);
+      for (let i = 1; i < vibrantCandidates.length; i++) {
+        const cand = vibrantCandidates[i];
+        if (cand.hex !== primaryColor && cand.hex !== secondaryColor) {
+          const candRgb = this.hexToRgb(cand.hex);
+          if (candRgb && primaryRgb && this.colorDistance(primaryRgb, candRgb) > 30) {
+            accentColor = cand.hex;
+            break;
+          }
         }
+      }
+
+      if (metaHex && metaHex !== primaryColor && metaHex !== detectedBg) {
+        if (secondaryColor === "#3B82F6") secondaryColor = metaHex;
       }
     } else if (metaHex && metaHex !== detectedBg) {
       primaryColor = metaHex;
     }
 
+    // Build curated palette of suggested colors (up to 8 vibrant options)
+    const suggestedColorsSet = new Set<string>();
+    if (primaryColor) suggestedColorsSet.add(primaryColor);
+    if (secondaryColor) suggestedColorsSet.add(secondaryColor);
+    if (accentColor) suggestedColorsSet.add(accentColor);
+    for (const v of vibrantCandidates) {
+      if (suggestedColorsSet.size >= 8) break;
+      suggestedColorsSet.add(v.hex);
+    }
+    // Fallback vibrant accents if needed
+    ["#254B35", "#3B82F6", "#A855F7", "#EC4899", "#10B981"].forEach((c) => {
+      if (suggestedColorsSet.size < 5) suggestedColorsSet.add(c);
+    });
+
     return {
       primaryColor,
       secondaryColor,
+      accentColor,
       backgroundColor,
       textColor,
+      suggestedColors: Array.from(suggestedColorsSet),
     };
   }
 

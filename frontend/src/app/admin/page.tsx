@@ -13,8 +13,9 @@ import {
   MessageSquare,
   RefreshCw,
   ExternalLink,
+  Trash2,
 } from "lucide-react";
-import { fetchAdminOverview } from "@/api/saasApi";
+import { fetchAdminOverview, deleteWebsite } from "@/api/saasApi";
 
 interface WebsiteItem {
   id: string;
@@ -62,6 +63,29 @@ export default function AdminOverviewPage() {
   const [websites, setWebsites] = useState<WebsiteItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const handleDeleteWebsite = async (id: string, name: string) => {
+    const confirmed = window.confirm(
+      `Are you sure you want to delete "${name}"? This will permanently delete the website, its crawled pages, knowledge documents, and chatbot configuration.`
+    );
+    if (!confirmed) return;
+
+    setDeletingId(id);
+    setError("");
+    try {
+      await deleteWebsite(id);
+      setWebsites((prev) => prev.filter((w) => w.id !== id));
+      setMetrics((prev) => ({
+        ...prev,
+        totalWebsites: Math.max(0, prev.totalWebsites - 1),
+      }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete website.");
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   const loadData = async () => {
     setIsLoading(true);
@@ -311,19 +335,30 @@ export default function AdminOverviewPage() {
                       {site.created_at ? new Date(site.created_at).toLocaleDateString() : "Active"}
                     </td>
                     <td className="px-6 py-4">
-                      <span
-                        className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium capitalize ${
-                          site.crawl_status === "completed"
-                            ? "bg-[#E5F0E1] text-[#254B35]"
-                            : site.crawl_status === "in_progress"
-                            ? "bg-blue-50 text-blue-700"
-                            : site.crawl_status === "failed"
-                            ? "bg-red-50 text-red-600"
-                            : "bg-gray-100 text-gray-700"
-                        }`}
-                      >
-                        {site.crawl_status || "idle"}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium capitalize ${
+                            site.crawl_status === "completed"
+                              ? "bg-[#E5F0E1] text-[#254B35]"
+                              : site.crawl_status === "in_progress"
+                              ? "bg-blue-50 text-blue-700"
+                              : site.crawl_status === "failed"
+                              ? "bg-red-50 text-red-600"
+                              : "bg-gray-100 text-gray-700"
+                          }`}
+                        >
+                          {site.crawl_status || "idle"}
+                        </span>
+                        <button
+                          onClick={() => handleDeleteWebsite(site.id, site.name || site.url)}
+                          disabled={deletingId === site.id}
+                          title="Delete this website"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          {deletingId === site.id ? "Deleting..." : "Delete"}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))

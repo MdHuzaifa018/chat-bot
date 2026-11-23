@@ -181,6 +181,49 @@ export class AdminController {
     }
   }
 
+  static async updateRequest(req: AccountAuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const requestId = String(req.params.id);
+      const { businessName, contactName, email, websiteUrl, status } = req.body || {};
+
+      const body: Record<string, unknown> = {};
+      if (typeof businessName === "string" && businessName.trim()) {
+        body.business_name = businessName.trim();
+      }
+      if (typeof contactName === "string") {
+        body.contact_name = contactName.trim();
+      }
+      if (typeof email === "string" && email.trim()) {
+        body.email = email.trim().toLowerCase();
+      }
+      if (typeof websiteUrl === "string") {
+        body.website_url = websiteUrl.trim();
+      }
+      if (status && ["pending", "accepted", "approved", "rejected"].includes(status)) {
+        body.status = status === "accepted" ? "approved" : status;
+      }
+
+      if (Object.keys(body).length === 0) {
+        throw new ApiError(400, "NO_UPDATES", "No valid update fields provided.");
+      }
+
+      await supabaseRequest(`client_access_requests?id=eq.${encodeURIComponent(requestId)}`, {
+        method: "PATCH",
+        prefer: "return=minimal",
+        body,
+      });
+
+      const rows = await supabaseRequest<RequestRow[]>(
+        `client_access_requests?id=eq.${encodeURIComponent(requestId)}&select=id,business_name,contact_name,email,website_url,status,created_at&limit=1`
+      );
+      if (!rows[0]) throw new ApiError(404, "REQUEST_NOT_FOUND", "Access request not found.");
+
+      res.status(200).json({ data: shapeRequest(rows[0]) });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   static async resetClientAccessCode(req: AccountAuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const identifier = String(req.body?.identifier ?? "").trim();
@@ -292,6 +335,93 @@ export class AdminController {
         method: "DELETE", prefer: "return=minimal",
       });
       res.status(200).json({ data: { id, is_active: false } });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async updateEmployee(req: AccountAuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const id = String(req.params.id);
+      const existing = await supabaseRequest<Array<{ id: string; role: string }>>(
+        `admin_accounts?id=eq.${encodeURIComponent(id)}&select=id,role&limit=1`
+      );
+      if (!existing[0]) throw new ApiError(404, "EMPLOYEE_NOT_FOUND", "Team member not found.");
+      if (existing[0].role === "super_admin") throw new ApiError(403, "CANNOT_EDIT_SUPER_ADMIN", "The primary administrator cannot be edited here.");
+
+      const { name, email, job_title, role, permissions } = req.body || {};
+      const body: Record<string, unknown> = {};
+
+      if (typeof name === "string" && name.trim()) {
+        body.name = name.trim();
+      }
+      if (typeof email === "string" && email.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+        body.email = email.trim().toLowerCase();
+      }
+      if (typeof job_title === "string") {
+        body.job_title = job_title.trim();
+      }
+      if (typeof role === "string" && ["admin", "staff"].includes(role)) {
+        body.role = role;
+      }
+      if (permissions && typeof permissions === "object") {
+        body.permissions = normalizedPermissions(permissions);
+      }
+
+      if (Object.keys(body).length === 0) {
+        throw new ApiError(400, "NO_UPDATES", "No valid update fields provided.");
+      }
+
+      await supabaseRequest(`admin_accounts?id=eq.${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        prefer: "return=minimal",
+        body,
+      });
+
+      const updated = await supabaseRequest<Array<Record<string, unknown>>>(
+        `admin_accounts?id=eq.${encodeURIComponent(id)}&select=id,email,name,role,job_title,permissions,is_active,created_at&limit=1`
+      );
+
+      res.status(200).json({ data: updated[0] });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async deleteWebsite(req: AccountAuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const websiteId = String(req.params.id);
+      if (!websiteId) {
+        throw new ApiError(400, "WEBSITE_ID_REQUIRED", "Website ID is required.");
+      }
+
+      // Cascading cleanup of dependent tables
+      await supabaseRequest(`crawled_pages?website_id=eq.${encodeURIComponent(websiteId)}`, {
+        method: "DELETE",
+        prefer: "return=minimal",
+      }).catch(() => undefined);
+
+      await supabaseRequest(`knowledge_documents?website_id=eq.${encodeURIComponent(websiteId)}`, {
+        method: "DELETE",
+        prefer: "return=minimal",
+      }).catch(() => undefined);
+
+      await supabaseRequest(`suggested_questions?website_id=eq.${encodeURIComponent(websiteId)}`, {
+        method: "DELETE",
+        prefer: "return=minimal",
+      }).catch(() => undefined);
+
+      await supabaseRequest(`chatbot_configs?website_id=eq.${encodeURIComponent(websiteId)}`, {
+        method: "DELETE",
+        prefer: "return=minimal",
+      }).catch(() => undefined);
+
+      await supabaseRequest(`websites?id=eq.${encodeURIComponent(websiteId)}`, {
+        method: "DELETE",
+        prefer: "return=minimal",
+      });
+
+      res.status(200).json({ data: { id: websiteId, deleted: true } });
     } catch (error) {
       next(error);
     }

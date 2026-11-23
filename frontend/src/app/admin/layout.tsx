@@ -13,6 +13,7 @@ import {
   LogOut,
 } from "lucide-react";
 import { fetchCurrentAccount, signOut } from "@/api/saasApi";
+import { LogoutConfirmModal } from "@/components/LogoutConfirmModal";
 
 interface AdminSession {
   name: string;
@@ -88,9 +89,18 @@ if (checkingAuth || !session) {
     },
   ].filter((item) => item.visible);
 
-  const handleSignOut = async () => {
-    await signOut().catch(() => undefined);
-    router.replace("/admin/login");
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  const confirmSignOut = async () => {
+    setIsLoggingOut(true);
+    try {
+      await signOut().catch(() => undefined);
+      router.replace("/admin/login");
+    } finally {
+      setIsLoggingOut(false);
+      setShowLogoutModal(false);
+    }
   };
 
   return (
@@ -135,7 +145,7 @@ if (checkingAuth || !session) {
 
         <div className="p-4 border-t border-[#E5F0E1]">
           <button
-            onClick={handleSignOut}
+            onClick={() => setShowLogoutModal(true)}
             className="flex items-center gap-3 px-4 py-3 w-full text-sm font-medium text-[#647267] hover:bg-red-50 hover:text-red-600 rounded-xl transition-colors cursor-pointer"
           >
             <LogOut className="w-5 h-5" />
@@ -173,8 +183,11 @@ if (checkingAuth || !session) {
               })}
             </nav>
             <button
-              onClick={handleSignOut}
-              className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-red-600 rounded-xl"
+              onClick={() => {
+                setMobileOpen(false);
+                setShowLogoutModal(true);
+              }}
+              className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-red-600 rounded-xl cursor-pointer"
             >
               <LogOut className="w-5 h-5" />
               Sign Out
@@ -183,6 +196,16 @@ if (checkingAuth || !session) {
           <div className="flex-1 bg-black/30" onClick={() => setMobileOpen(false)} />
         </div>
       )}
+
+      {/* Custom Logout Confirmation Modal */}
+      <LogoutConfirmModal
+        isOpen={showLogoutModal}
+        onClose={() => setShowLogoutModal(false)}
+        onConfirm={confirmSignOut}
+        isLoading={isLoggingOut}
+        title="Sign out of Admin Console?"
+        description="Are you sure you want to end your administrator session? You will need your login credentials to return."
+      />
 
       {/* Main Area */}
       <div className="flex-1 flex flex-col min-w-0">

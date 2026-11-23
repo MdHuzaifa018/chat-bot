@@ -130,7 +130,7 @@ export class WidgetService {
     }
 
     // 1. Fetch Chatbot Config & Website Info
-    const configs = await supabaseRequest<Array<ChatbotConfig & { websites?: { name: string } }>>(
+    const configs = await supabaseRequest<Array<ChatbotConfig & { websites?: { name: string; url?: string } }>>(
       `chatbot_configs?public_chatbot_id=eq.${encodeURIComponent(publicChatbotId)}&select=id,website_id,chatbot_name,system_prompt_override,is_published,allowed_origins&limit=1`
     );
 
@@ -140,7 +140,12 @@ export class WidgetService {
     }
     this.assertOriginAllowed(config.allowed_origins || [], origin);
 
-    const isLivePreview = conversationId === "dashboard-live-preview" || conversationId === "live-preview" || conversationId === "live";
+    const isLivePreview =
+      conversationId === "dashboard-live-preview" ||
+      conversationId === "live-preview" ||
+      conversationId === "live" ||
+      conversationId === "dashboard-preview" ||
+      Boolean(conversationId && conversationId.includes("preview"));
 
     if (!isLivePreview) {
       if (!conversationId || !sessionToken) {
@@ -176,12 +181,18 @@ export class WidgetService {
       // Continue to full knowledge retrieval
     }
 
-    // 2. Retrieve Knowledge Context for Website
+    // 2. Comprehensive Knowledge Context Retrieval for Website
     let contextChunks: string[] = [];
     const sources: Array<{ title: string; url?: string }> = [];
 
+    // 2A. Injected Master A-to-Z Training Knowledge if available
+    if (config.system_prompt_override?.trim()) {
+      contextChunks.push(`[Master A-to-Z Training Knowledge Base]\n${config.system_prompt_override.trim()}`);
+      sources.push({ title: `${websiteName} Official Training Knowledge`, url: config.websites?.url });
+    }
+
     try {
-      // 2A. First try stored procedure match_website_knowledge
+      // 2B. Full-text search via stored procedure match_website_knowledge
       const matches = await supabaseRequest<
         Array<{ id: string; title: string; content: string; source_url?: string }>
       >("rpc/match_website_knowledge", {
@@ -189,13 +200,13 @@ export class WidgetService {
         body: {
           p_website_id: config.website_id,
           p_query: cleanMessage,
-          p_limit: 4,
+          p_limit: 5,
         },
       });
 
       if (matches && matches.length > 0) {
-        contextChunks = matches.map((m) => `[Document: ${m.title}]\n${m.content}`);
         matches.forEach((m) => {
+          contextChunks.push(`[Document: ${m.title}]\n${m.content}`);
           if (m.title && !sources.some((s) => s.title === m.title)) {
             sources.push({ title: m.title, url: m.source_url });
           }
@@ -205,46 +216,66 @@ export class WidgetService {
       console.warn("[WidgetService] Stored procedure search error:", err);
     }
 
-    // 2B. Guaranteed Fallback: If full-text search returned 0 matches (e.g. Hindi, Hinglish, or conceptual queries),
-    // fetch the website's crawled knowledge documents directly so the AI ALWAYS knows the website's content!
-    if (contextChunks.length === 0) {
-      try {
-        const docs = await supabaseRequest<
-          Array<{ id: string; title: string; content: string; source_url?: string }>
-        >(
-          `knowledge_documents?website_id=eq.${config.website_id}&select=id,title,content,source_url&order=created_at.desc&limit=5`
-        );
-        if (docs && docs.length > 0) {
-          contextChunks = docs.map((d) => `[Document: ${d.title}]\n${d.content.substring(0, 1500)}`);
-          docs.forEach((d) => {
-            if (d.title && !sources.some((s) => s.title === d.title)) {
-              sources.push({ title: d.title, url: d.source_url });
+    // 2B. Guaranteed Multi-Lingual & General Knowledge Context:
+    // Always append top website knowledge documents so Gemini understands the site from A-to-Z
+    // regardless of language (Hindi, Hinglish, English) or query phrasing.
+    try {
+      const docs = await supabaseRequest<
+        Array<{ id: string; title: string; content: string; source_url?: string }>
+      >(
+        `knowledge_documents?website_id=eq.${config.website_id}&select=id,title,content,source_url&order=created_at.desc&limit=8`
+      );
+      if (docs && docs.length > 0) {
+        // Score docs by query keyword matching if available
+        const cleanTokens = cleanMessage
+          .toLowerCase()
+          .split(/\s+/)
+          .filter((t) => t.length > 2);
+
+        const scored = docs.map((d) => {
+          let score = 0;
+          const textLower = `${d.title} ${d.content}`.toLowerCase();
+          for (const token of cleanTokens) {
+            if (textLower.includes(token)) score += 3;
+          }
+          return { d, score };
+        });
+
+        scored.sort((a, b) => b.score - a.score);
+
+        for (const item of scored) {
+          const docTitle = item.d.title || "Website Overview";
+          if (!contextChunks.some((c) => c.includes(docTitle))) {
+            contextChunks.push(`[Document: ${docTitle}]\n${item.d.content.slice(0, 3500)}`);
+            if (!sources.some((s) => s.title === docTitle)) {
+              sources.push({ title: docTitle, url: item.d.source_url });
             }
-          });
+          }
+          if (contextChunks.length >= 6) break;
         }
-      } catch (err) {
-        console.warn("[WidgetService] Fallback docs error:", err);
       }
+    } catch (err) {
+      console.warn("[WidgetService] Knowledge documents fallback error:", err);
     }
 
-    // 2C. Additional Fallback: Crawled pages clean text
+    // 2C. Fallback to raw crawled_pages if knowledge_documents was empty
     if (contextChunks.length === 0) {
       try {
         const pages = await supabaseRequest<
           Array<{ id: string; title: string; clean_text: string; url: string }>
         >(
-          `crawled_pages?website_id=eq.${config.website_id}&select=id,title,clean_text,url&limit=4`
+          `crawled_pages?website_id=eq.${config.website_id}&select=id,title,clean_text,url&limit=6`
         );
         if (pages && pages.length > 0) {
-          contextChunks = pages.map((p) => `[Page: ${p.title}]\n${p.clean_text.substring(0, 1500)}`);
           pages.forEach((p) => {
+            contextChunks.push(`[Page: ${p.title || p.url}]\n${p.clean_text.slice(0, 3500)}`);
             if (p.title && !sources.some((s) => s.title === p.title)) {
               sources.push({ title: p.title, url: p.url });
             }
           });
         }
       } catch (err) {
-        console.warn("[WidgetService] Fallback pages error:", err);
+        console.warn("[WidgetService] Crawled pages fallback error:", err);
       }
     }
 

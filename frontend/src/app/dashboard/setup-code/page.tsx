@@ -21,13 +21,21 @@ export default function SetupCodePage() {
   const [botId, setBotId] = useState("");
 
   useEffect(() => {
+    const localBotId = localStorage.getItem("supportai_public_chatbot_id");
+    if (localBotId) {
+      setBotId(localBotId);
+      setIsConfigured(true);
+    }
+
     fetchWebsites().then(async sites => {
       if (!sites.length) return;
       const details = await fetchWebsiteDetails(sites[0].id);
       setBotName(details.chatbotConfig?.chatbot_name || sites[0].name);
-      setBotId(details.chatbotConfig?.public_chatbot_id || "");
-      setIsConfigured(Boolean(details.chatbotConfig?.public_chatbot_id));
-    }).catch(() => setIsConfigured(false));
+      setBotId(details.chatbotConfig?.public_chatbot_id || localBotId || "");
+      setIsConfigured(Boolean(details.chatbotConfig?.public_chatbot_id || localBotId));
+    }).catch(() => {
+      if (!localBotId) setIsConfigured(false);
+    });
   }, []);
 
   const embedScript = `<script

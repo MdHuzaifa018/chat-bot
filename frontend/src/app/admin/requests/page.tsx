@@ -13,10 +13,12 @@ import {
   AlertCircle,
   Copy,
   Trash2,
+  Pencil,
 } from "lucide-react";
 import {
   fetchAdminRequests,
   reviewRequest,
+  updateClientRequest,
   deleteRequest,
   resetClientAccessCode,
 } from "@/api/saasApi";
@@ -64,6 +66,62 @@ export default function ClientRequestsPage() {
 
   // Reset Access Code State
   const [isResetting, setIsResetting] = useState(false);
+
+  // Edit Request State
+  const [editingReq, setEditingReq] = useState<ClientRequest | null>(null);
+  const [editBusinessName, setEditBusinessName] = useState("");
+  const [editContactName, setEditContactName] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [editWebsiteUrl, setEditWebsiteUrl] = useState("");
+  const [editStatus, setEditStatus] = useState<RequestStatus>("pending");
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  const openEditModal = (req: ClientRequest) => {
+    setEditingReq(req);
+    setEditBusinessName(req.businessName);
+    setEditContactName(req.contactName);
+    setEditEmail(req.email);
+    setEditWebsiteUrl(req.websiteUrl);
+    setEditStatus(req.status);
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingReq) return;
+    setIsUpdating(true);
+    setError("");
+
+    try {
+      await updateClientRequest(editingReq.id, {
+        businessName: editBusinessName.trim(),
+        contactName: editContactName.trim(),
+        email: editEmail.trim(),
+        websiteUrl: editWebsiteUrl.trim(),
+        status: editStatus,
+      });
+
+      setRequests((prev) =>
+        prev.map((r) =>
+          r.id === editingReq.id
+            ? {
+                ...r,
+                businessName: editBusinessName.trim(),
+                contactName: editContactName.trim(),
+                email: editEmail.trim(),
+                websiteUrl: editWebsiteUrl.trim(),
+                status: editStatus,
+              }
+            : r
+        )
+      );
+
+      setEditingReq(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update client request.");
+    } finally {
+      setIsUpdating(false);
+    }
+  };
 
   const loadRequests = async () => {
     setIsLoading(true);
@@ -396,6 +454,16 @@ export default function ClientRequestsPage() {
                           </button>
                         )}
 
+                        {/* Edit Button */}
+                        <button
+                          onClick={() => openEditModal(req)}
+                          title="Edit client details"
+                          className="p-1.5 text-[#647267] hover:text-[#254B35] hover:bg-[#F1F7EF] rounded-lg transition-colors cursor-pointer"
+                          aria-label="Edit client details"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+
                         {/* Delete Button */}
                         <button
                           onClick={() => handleDelete(req.id)}
@@ -494,6 +562,108 @@ export default function ClientRequestsPage() {
                 {isSending ? "Approving & Sending..." : "Approve & Send Mail"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* Edit Client Request Modal */}
+      {editingReq && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl border border-[#E5F0E1] max-w-lg w-full p-6 sm:p-8 shadow-2xl space-y-5">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-[#202820]">
+                Edit Client Request
+              </h3>
+              <button
+                onClick={() => setEditingReq(null)}
+                className="p-1 text-[#647267] hover:text-[#202820] cursor-pointer rounded-lg hover:bg-gray-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEdit} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-[#647267]">
+                  Business Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editBusinessName}
+                  onChange={(e) => setEditBusinessName(e.target.value)}
+                  className="w-full bg-[#F1F7EF] border border-[#E5F0E1] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#A8C99B]"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-[#647267]">
+                  Contact Name
+                </label>
+                <input
+                  type="text"
+                  value={editContactName}
+                  onChange={(e) => setEditContactName(e.target.value)}
+                  className="w-full bg-[#F1F7EF] border border-[#E5F0E1] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#A8C99B]"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-[#647267]">
+                  Email Address
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={editEmail}
+                  onChange={(e) => setEditEmail(e.target.value)}
+                  className="w-full bg-[#F1F7EF] border border-[#E5F0E1] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#A8C99B]"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-[#647267]">
+                  Website URL
+                </label>
+                <input
+                  type="text"
+                  value={editWebsiteUrl}
+                  onChange={(e) => setEditWebsiteUrl(e.target.value)}
+                  className="w-full bg-[#F1F7EF] border border-[#E5F0E1] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#A8C99B]"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-[#647267]">
+                  Request Status
+                </label>
+                <select
+                  value={editStatus}
+                  onChange={(e) => setEditStatus(e.target.value as RequestStatus)}
+                  className="w-full bg-[#F1F7EF] border border-[#E5F0E1] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#A8C99B]"
+                >
+                  <option value="pending">Pending</option>
+                  <option value="accepted">Accepted / Approved</option>
+                  <option value="rejected">Rejected</option>
+                </select>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3">
+                <button
+                  type="button"
+                  onClick={() => setEditingReq(null)}
+                  className="px-4 py-2.5 text-xs font-medium text-[#647267] hover:text-[#202820] cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isUpdating}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#254B35] text-white rounded-full text-xs font-medium hover:bg-[#1e3d2a] cursor-pointer disabled:opacity-60 shadow-sm"
+                >
+                  {isUpdating ? "Saving..." : "Save Changes"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -12,11 +12,14 @@ import {
   Mail,
   User,
   Briefcase,
+  Pencil,
+  X,
 } from "lucide-react";
 import {
   createEmployee,
   deleteEmployee,
   fetchEmployees,
+  updateEmployee,
   updateEmployeePermissions,
 } from "@/api/saasApi";
 
@@ -57,6 +60,59 @@ export default function TeamPermissionsPage() {
   const [busy, setBusy] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [copied, setCopied] = useState(false);
+
+  // Edit Employee State
+  const [editingEmp, setEditingEmp] = useState<EmployeeItem | null>(null);
+  const [editEmpName, setEditEmpName] = useState("");
+  const [editEmpEmail, setEditEmpEmail] = useState("");
+  const [editEmpJobTitle, setEditEmpJobTitle] = useState("");
+  const [editEmpRole, setEditEmpRole] = useState("staff");
+  const [isUpdatingEmp, setIsUpdatingEmp] = useState(false);
+
+  const openEditEmpModal = (emp: EmployeeItem) => {
+    setEditingEmp(emp);
+    setEditEmpName(emp.name);
+    setEditEmpEmail(emp.email);
+    setEditEmpJobTitle(emp.job_title || "");
+    setEditEmpRole(emp.role === "admin" ? "admin" : "staff");
+  };
+
+  const handleSaveEmployee = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingEmp) return;
+    setIsUpdatingEmp(true);
+    setError("");
+
+    try {
+      const updated = await updateEmployee(editingEmp.id, {
+        name: editEmpName.trim(),
+        email: editEmpEmail.trim(),
+        job_title: editEmpJobTitle.trim(),
+        role: editEmpRole,
+      });
+
+      setEmployees((prev) =>
+        prev.map((item) =>
+          item.id === editingEmp.id
+            ? {
+                ...item,
+                name: editEmpName.trim(),
+                email: editEmpEmail.trim(),
+                job_title: editEmpJobTitle.trim(),
+                role: editEmpRole,
+                ...(updated || {}),
+              }
+            : item
+        )
+      );
+
+      setEditingEmp(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update employee.");
+    } finally {
+      setIsUpdatingEmp(false);
+    }
+  };
 
   const refresh = async () => {
     setIsLoading(true);
@@ -332,14 +388,24 @@ export default function TeamPermissionsPage() {
                 </div>
 
                 {!isSuper && (
-                  <button
-                    onClick={() => handleDeleteEmployee(emp.id)}
-                    className="self-start sm:self-auto p-2 text-[#647267] hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors cursor-pointer"
-                    aria-label="Remove employee"
-                    title="Remove team member"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-1 self-start sm:self-auto">
+                    <button
+                      onClick={() => openEditEmpModal(emp)}
+                      className="p-2 text-[#647267] hover:text-[#254B35] hover:bg-[#F1F7EF] rounded-xl transition-colors cursor-pointer"
+                      aria-label="Edit employee"
+                      title="Edit team member"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteEmployee(emp.id)}
+                      className="p-2 text-[#647267] hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors cursor-pointer"
+                      aria-label="Remove employee"
+                      title="Remove team member"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 )}
               </div>
 
@@ -396,6 +462,96 @@ export default function TeamPermissionsPage() {
           </div>
         )}
       </div>
+      {/* Edit Employee Modal */}
+      {editingEmp && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl border border-[#E5F0E1] max-w-md w-full p-6 sm:p-8 shadow-2xl space-y-5">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-[#202820]">
+                Edit Team Member
+              </h3>
+              <button
+                onClick={() => setEditingEmp(null)}
+                className="p-1 text-[#647267] hover:text-[#202820] cursor-pointer rounded-lg hover:bg-gray-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEmployee} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-[#647267]">
+                  Full Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editEmpName}
+                  onChange={(e) => setEditEmpName(e.target.value)}
+                  className="w-full bg-[#F1F7EF] border border-[#E5F0E1] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#A8C99B]"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-[#647267]">
+                  Work Email
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={editEmpEmail}
+                  onChange={(e) => setEditEmpEmail(e.target.value)}
+                  className="w-full bg-[#F1F7EF] border border-[#E5F0E1] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#A8C99B]"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-[#647267]">
+                  Job Title / Display Role
+                </label>
+                <input
+                  type="text"
+                  value={editEmpJobTitle}
+                  onChange={(e) => setEditEmpJobTitle(e.target.value)}
+                  placeholder="e.g. Backend Developer"
+                  className="w-full bg-[#F1F7EF] border border-[#E5F0E1] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#A8C99B]"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-[#647267]">
+                  Role Tier
+                </label>
+                <select
+                  value={editEmpRole}
+                  onChange={(e) => setEditEmpRole(e.target.value)}
+                  className="w-full bg-[#F1F7EF] border border-[#E5F0E1] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#A8C99B]"
+                >
+                  <option value="staff">Staff Member</option>
+                  <option value="admin">Administrator</option>
+                </select>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3">
+                <button
+                  type="button"
+                  onClick={() => setEditingEmp(null)}
+                  className="px-4 py-2.5 text-xs font-medium text-[#647267] hover:text-[#202820] cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isUpdatingEmp}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#254B35] text-white rounded-full text-xs font-medium hover:bg-[#1e3d2a] cursor-pointer disabled:opacity-60 shadow-sm"
+                >
+                  {isUpdatingEmp ? "Saving..." : "Save Changes"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

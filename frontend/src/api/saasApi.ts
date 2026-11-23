@@ -24,13 +24,55 @@ export interface ChatbotConfigData {
 export const API_BASE = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api").replace(/\/$/, "");
 export const API_ORIGIN = API_BASE.replace(/\/api$/, "");
 
+function getCookie(name: string): string | null {
+  if (typeof document === "undefined") return null;
+  const matches = document.cookie.match(new RegExp(`(?:^|; )${name.replace(/([.$?*|{}()[\]\\/+^])/g, "\\$1")}=([^;]*)`));
+  return matches ? decodeURIComponent(matches[1]) : null;
+}
+
+function setCookie(name: string, value: string, days = 7): void {
+  if (typeof document === "undefined") return;
+  const expires = new Date(Date.now() + days * 864e5).toUTCString();
+  document.cookie = `${name}=${encodeURIComponent(value)}; expires=${expires}; path=/; SameSite=Lax`;
+}
+
+function deleteCookie(name: string): void {
+  if (typeof document === "undefined") return;
+  document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Lax`;
+}
+
+export function getStoredAuthToken(): string | null {
+  return getCookie("supportai_token");
+}
+
+export function setStoredAuthToken(token?: string | null): void {
+  if (typeof window === "undefined") return;
+  // Completely purge legacy localStorage storage to ensure cookies are used
+  try {
+    localStorage.removeItem("supportai_token");
+  } catch {}
+
+  if (token) {
+    setCookie("supportai_token", token, 7);
+  } else {
+    deleteCookie("supportai_token");
+  }
+}
+
 export async function apiRequest<T = any>(path: string, init: RequestInit = {}): Promise<T> {
+  const token = getStoredAuthToken();
+  const headers: Record<string, string> = {
+    ...(init.body ? { "Content-Type": "application/json" } : {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...((init.headers as Record<string, string>) || {}),
+  };
+
   try {
     const response = await fetch(`${API_BASE}${path.startsWith("/") ? path : `/${path}`}`, {
       ...init,
       credentials: "include",
       cache: "no-store",
-      headers: { ...(init.body ? { "Content-Type": "application/json" } : {}), ...init.headers },
+      headers,
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload?.error?.message || payload?.message || `Request failed (${response.status})`);
@@ -44,19 +86,48 @@ export async function apiRequest<T = any>(path: string, init: RequestInit = {}):
 }
 
 export async function signInClient(username: string, accessCode: string) {
-  return apiRequest<{ authenticated: true; account: Account }>("/auth/client/login", { method: "POST", body: JSON.stringify({ username, accessCode }) });
+  const res = await apiRequest<{ authenticated: true; account: Account; token?: string }>("/auth/client/login", {
+    method: "POST",
+    body: JSON.stringify({ username: username.trim(), accessCode: accessCode.trim() }),
+  });
+  if (res.token) {
+    setStoredAuthToken(res.token);
+  }
+  return res;
 }
+
 export async function signInAdmin(email: string, password: string) {
-  return apiRequest<{ authenticated: true; account: Account }>("/auth/admin/login", { method: "POST", body: JSON.stringify({ email, password }) });
+  const res = await apiRequest<{ authenticated: true; account: Account; token?: string }>("/auth/admin/login", {
+    method: "POST",
+    body: JSON.stringify({ email: email.trim(), password }),
+  });
+  if (res.token) {
+    setStoredAuthToken(res.token);
+  }
+  return res;
 }
-export async function fetchCurrentAccount() { return apiRequest<{ authenticated: true; account: Account }>("/auth/me"); }
-export async function signOut() { return apiRequest("/auth/logout", { method: "POST" }); }
+
+export async function fetchCurrentAccount() {
+  return apiRequest<{ authenticated: true; account: Account }>("/auth/me");
+}
+
+export async function signOut() {
+  setStoredAuthToken(null);
+  deleteCookie("supportai_session");
+  try {
+    localStorage.removeItem("supportai_token");
+  } catch {}
+  return apiRequest("/auth/logout", { method: "POST" });
+}
 export async function submitAccessRequest(data: { businessName: string; contactName: string; email: string; websiteUrl: string }) {
   return apiRequest("/auth/client/request-access", { method: "POST", body: JSON.stringify(data) });
 }
 export async function fetchWebsites() { return (await apiRequest<{ data: WebsiteData[] }>("/websites")).data; }
 export async function createWebsite(url: string, name?: string) {
   return apiRequest<{ data: any }>("/websites", { method: "POST", body: JSON.stringify({ url, name }) });
+}
+export async function deleteWebsite(id: string) {
+  return (await apiRequest<{ data: any }>(`/admin/websites/${encodeURIComponent(id)}`, { method: "DELETE" })).data;
 }
 export async function fetchWebsiteDetails(id: string) { return (await apiRequest<{ data: any }>(`/websites/${encodeURIComponent(id)}`)).data; }
 export async function updateChatbotConfig(websiteId: string, updates: Partial<ChatbotConfigData>) {
@@ -76,6 +147,12 @@ export async function fetchAdminRequests() { return (await apiRequest<{ data: an
 export async function reviewRequest(id: string, decision: "approve" | "reject") {
   return (await apiRequest<{ data: any }>(`/admin/requests/${encodeURIComponent(id)}/${decision}`, { method: "POST" })).data;
 }
+export async function updateClientRequest(id: string, updates: Record<string, unknown>) {
+  return (await apiRequest<{ data: any }>(`/admin/requests/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(updates),
+  })).data;
+}
 export async function deleteRequest(id: string) {
   return (await apiRequest<{ data: any }>(`/admin/requests/${encodeURIComponent(id)}`, { method: "DELETE" })).data;
 }
@@ -88,6 +165,12 @@ export async function resetClientAccessCode(identifier: string) {
 export async function fetchEmployees() { return (await apiRequest<{ data: any[] }>("/admin/employees")).data; }
 export async function createEmployee(data: { name: string; email: string; role: string }) {
   return (await apiRequest<{ data: any }>("/admin/employees", { method: "POST", body: JSON.stringify(data) })).data;
+}
+export async function updateEmployee(id: string, updates: Record<string, unknown>) {
+  return (await apiRequest<{ data: any }>(`/admin/employees/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(updates),
+  })).data;
 }
 export async function updateEmployeePermissions(id: string, permissions: Record<string, boolean>) {
   return (await apiRequest<{ data: any }>(`/admin/employees/${encodeURIComponent(id)}/permissions`, { method: "PATCH", body: JSON.stringify({ permissions }) })).data;

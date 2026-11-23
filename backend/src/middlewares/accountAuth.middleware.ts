@@ -17,25 +17,38 @@ export async function attachAccount(
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith("Bearer ")) {
       const token = authHeader.replace(/^Bearer\s+/, "").trim();
-      // Supabase JWT token verification
-      try {
-        const { createClient } = await import("@supabase/supabase-js");
-        const { env } = await import("../config/env.js");
-        const client = createClient(env.supabase.url, env.supabase.serviceRoleKey);
-        const { data: { user } } = await client.auth.getUser(token);
-        if (user) {
-          req.account = {
-            accountType: "client",
-            id: user.id,
-            userId: user.id,
-            username: user.email?.split("@")[0] || "user",
-            name: (user.user_metadata?.name as string) || (user.user_metadata?.full_name as string) || user.email?.split("@")[0] || "User",
-            email: user.email || "",
-          };
-          return next();
+      if (token) {
+        // 1. First check SupportAI session token
+        try {
+          const session = await AccountAuthService.resolveSession(token);
+          if (session) {
+            req.account = session;
+            return next();
+          }
+        } catch {
+          // Continue to Supabase check
         }
-      } catch {
-        // Continue to cookie check
+
+        // 2. Supabase JWT token verification
+        try {
+          const { createClient } = await import("@supabase/supabase-js");
+          const { env } = await import("../config/env.js");
+          const client = createClient(env.supabase.url, env.supabase.serviceRoleKey);
+          const { data: { user } } = await client.auth.getUser(token);
+          if (user) {
+            req.account = {
+              accountType: "client",
+              id: user.id,
+              userId: user.id,
+              username: user.email?.split("@")[0] || "user",
+              name: (user.user_metadata?.name as string) || (user.user_metadata?.full_name as string) || user.email?.split("@")[0] || "User",
+              email: user.email || "",
+            };
+            return next();
+          }
+        } catch {
+          // Continue to cookie check
+        }
       }
     }
 
@@ -44,17 +57,6 @@ export async function attachAccount(
       req.account = await AccountAuthService.resolveSession(token) ?? undefined;
     }
 
-    // Default workspace account for seamless development / dashboard operation
-    if (!req.account) {
-      req.account = {
-        accountType: "client",
-        id: "987b7fc3-ac77-4058-a24e-a6ef73109648",
-        userId: "987b7fc3-ac77-4058-a24e-a6ef73109648",
-        username: "dev_client",
-        name: "Default Workspace Owner",
-        email: "dev@supportai.local",
-      };
-    }
     next();
   } catch (error) {
     next(error);

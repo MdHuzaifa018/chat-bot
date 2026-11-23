@@ -23,27 +23,40 @@ export default function ClientLoginPage() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  const codeLength = encryptedCode.length;
-  const isCodeValid = codeLength >= 15 && codeLength <= 22;
+  const cleanCode = encryptedCode.trim();
+  const isCodeValid = cleanCode.length >= 8;
+
+  // Check if session already exists
+  React.useEffect(() => {
+    import("@/api/saasApi").then(({ fetchCurrentAccount }) => {
+      fetchCurrentAccount()
+        .then(({ account }) => {
+          if (account?.accountType === "client") {
+            router.replace("/dashboard");
+          }
+        })
+        .catch(() => {});
+    });
+  }, [router]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
     if (!username.trim()) {
-      setError("Please enter your username.");
+      setError("Please enter your username or registered email.");
       return;
     }
 
     if (!isCodeValid) {
-      setError("Encrypted access code must be between 15 and 22 characters.");
+      setError("Please enter a valid access code (at least 8 characters).");
       return;
     }
 
     setIsLoading(true);
 
     try {
-      await signInClient(username.trim(), encryptedCode.trim());
+      await signInClient(username.trim(), cleanCode);
       router.replace("/dashboard");
     } catch (error) {
       setError(error instanceof Error ? error.message : "Sign in failed.");
@@ -90,10 +103,10 @@ export default function ClientLoginPage() {
         )}
 
         <form onSubmit={handleLogin} className="space-y-5">
-          {/* Username */}
+          {/* Username or Email */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-[#202820] block">
-              Username
+              Username or Email
             </label>
             <div className="relative">
               <User className="w-4 h-4 text-[#647267] absolute left-4 top-3.5" />
@@ -101,24 +114,24 @@ export default function ClientLoginPage() {
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="Enter your client username"
+                placeholder="Username or business email"
                 className="w-full bg-[#F1F7EF] border border-[#E5F0E1] rounded-xl pl-11 pr-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#A8C99B]"
               />
             </div>
           </div>
 
-          {/* Encrypted Code (15-22 chars) */}
+          {/* Encrypted Code */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <label className="text-sm font-medium text-[#202820]">
-                Encrypted Access Code
+                Access Code
               </label>
               <span
                 className={`text-xs font-medium ${
                   isCodeValid ? "text-[#254B35]" : "text-[#647267]"
                 }`}
               >
-                {codeLength} / 15–22 chars
+                {cleanCode.length > 0 ? `${cleanCode.length} chars` : "Paste access code"}
               </span>
             </div>
             <div className="relative">
@@ -127,8 +140,8 @@ export default function ClientLoginPage() {
                 type={showCode ? "text" : "password"}
                 value={encryptedCode}
                 onChange={(e) => setEncryptedCode(e.target.value)}
-                maxLength={22}
-                placeholder="Paste your 15–22 character code"
+                maxLength={64}
+                placeholder="Paste your access code"
                 className="w-full bg-[#F1F7EF] border border-[#E5F0E1] rounded-xl pl-11 pr-11 py-3 text-sm font-mono tracking-wider focus:outline-none focus:ring-2 focus:ring-[#A8C99B]"
               />
               <button
@@ -154,7 +167,6 @@ export default function ClientLoginPage() {
             {isLoading ? "Verifying Credentials..." : "Access Dashboard"}
             {!isLoading && <ArrowRight className="w-4 h-4" />}
           </button>
-
         </form>
       </div>
 

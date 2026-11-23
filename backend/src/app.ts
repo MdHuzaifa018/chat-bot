@@ -33,13 +33,21 @@ app.use((req, res, next) => {
     origin: publicWidgetRequest
       ? "*"
       : (incomingOrigin, callback) => {
-          if (!incomingOrigin) return callback(null, false);
+          if (!incomingOrigin) return callback(null, true);
           if (allowedOrigins.has(incomingOrigin)) return callback(null, incomingOrigin);
+          try {
+            const host = new URL(incomingOrigin).hostname;
+            if (host === "localhost" || host === "127.0.0.1") {
+              return callback(null, incomingOrigin);
+            }
+          } catch {
+            // invalid URL
+          }
           return callback(new ApiError(403, "ORIGIN_NOT_ALLOWED", "This frontend origin is not allowed."));
         },
     credentials: !publicWidgetRequest,
     methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Accept"],
+    allowedHeaders: ["Content-Type", "Accept", "Authorization"],
     maxAge: 600,
   });
   corsMiddleware(req, res, next);

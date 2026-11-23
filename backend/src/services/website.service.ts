@@ -1,6 +1,6 @@
 import { supabaseRequest } from "../utils/supabase.js";
 import { ApiError } from "../utils/apiError.js";
-import { CrawlerService } from "./crawler.service.js";
+import { CrawlerService, type ExtractedAtoZKnowledge, type CrawlResult } from "./crawler.service.js";
 import { ThemeDetectorService, type DetectedTheme } from "./themeDetector.service.js";
 import { GeminiService } from "./gemini.service.js";
 import { randomBytes } from "node:crypto";
@@ -33,6 +33,9 @@ export class WebsiteService {
     detectedTheme: DetectedTheme;
     pagesCrawled: number;
     suggestedQuestions: string[];
+    crawledPages?: Array<{ title: string; cleanText: string; url: string; path: string; description: string }>;
+    extractedKnowledge?: ExtractedAtoZKnowledge;
+    trainingPrompt?: string;
   }> {
     const safeUrl = CrawlerService.validateSafeUrl(url);
     const domain = safeUrl.hostname;
@@ -41,13 +44,13 @@ export class WebsiteService {
     // 1. Fetch homepage HTML for quick theme extraction
     let homepageHtml = "";
     try {
-      homepageHtml = await CrawlerService.fetchHtml(safeUrl.href, 6000);
+      homepageHtml = await CrawlerService.fetchHtml(safeUrl.href, 4000);
     } catch {
       // Continue even if initial fetch is delayed
     }
 
     const detectedTheme: DetectedTheme = homepageHtml
-      ? ThemeDetectorService.extractTheme(homepageHtml, safeUrl)
+      ? await ThemeDetectorService.extractTheme(homepageHtml, safeUrl)
       : {
         primaryColor: "#254B35",
         secondaryColor: "#3B82F6",
@@ -62,6 +65,7 @@ export class WebsiteService {
         fontHeading: "Inter, system-ui, sans-serif",
         logoUrl: `${safeUrl.origin}/favicon.ico`,
         brandName: initialName,
+        suggestedColors: ["#254B35", "#3B82F6", "#A8C99B", "#EC4899", "#10B981"],
         confidence: { primaryColor: 0.5, fontFamily: 0.5, logoUrl: 0.5, brandName: 0.5 },
         sources: { primaryColor: "Default", fontFamily: "Default", logoUrl: "Default", brandName: "Default" },
       };
@@ -151,11 +155,18 @@ export class WebsiteService {
       throw new ApiError(503, "CHATBOT_CONFIG_CREATE_FAILED", "Could not create chatbot configuration for this website.");
     }
 
-    // 4. Crawl pages (homepage + sitemap + internal links)
-    let crawledPages: Array<{ title: string; cleanText: string; url: string }> = [];
+    // 4. Crawl pages (homepage + prioritized internal links with zero-duplicate homepage fetch)
+    let crawledPages: Array<{ title: string; cleanText: string; url: string; path: string; description: string }> = [];
     let crawlStatus: Website["crawl_status"] = "failed";
     try {
-      crawledPages = await CrawlerService.crawlWebsite(website.id, safeUrl.href, 8);
+      const results = await CrawlerService.crawlWebsite(website.id, safeUrl.href, 6, homepageHtml);
+      crawledPages = results.map((r) => ({
+        url: r.url,
+        path: r.path,
+        title: r.title,
+        description: r.description,
+        cleanText: r.cleanText,
+      }));
       crawlStatus = crawledPages.length > 0 ? "completed" : "failed";
       await supabaseRequest(`websites?id=eq.${website.id}`, {
         method: "PATCH",
@@ -175,9 +186,59 @@ export class WebsiteService {
       });
     }
 
-    // 5. Generate Smart Suggested Questions with Gemini
+    // 5. Extract Comprehensive A-to-Z Knowledge & Generate Master Training Prompt
+    const extractedKnowledge = CrawlerService.extractAtoZKnowledge(
+      crawledPages,
+      domain,
+      finalName
+    );
+
+    // Update chatbotConfig with system_prompt_override so the bot is immediately 100% trained
+    try {
+      await supabaseRequest(`chatbot_configs?id=eq.${encodeURIComponent(chatbotConfig.id)}`, {
+        method: "PATCH",
+        body: {
+          system_prompt_override: extractedKnowledge.trainingPrompt,
+        },
+      });
+      chatbotConfig.system_prompt_override = extractedKnowledge.trainingPrompt;
+    } catch (cfgErr) {
+      console.warn("[WebsiteService] Failed to patch system_prompt_override:", cfgErr);
+    }
+
+    // Insert Master Knowledge Document for RAG context
+    try {
+      await supabaseRequest("knowledge_documents", {
+        method: "POST",
+        body: {
+          website_id: website.id,
+          title: `${finalName} - Master A-to-Z Business Knowledge Base`,
+          source_type: "manual_doc",
+          source_url: safeUrl.href,
+          content: extractedKnowledge.trainingPrompt,
+        },
+      });
+    } catch {
+      // ignore
+    }
+
+    // 6. Generate Smart Suggested Questions with Gemini (with instant domain fallback)
     const summaries = crawledPages.map((p) => `${p.title}: ${p.cleanText.substring(0, 300)}`);
-    const questions = await GeminiService.generateSuggestedQuestions(finalName, summaries);
+    let questions: string[] = [];
+    try {
+      questions = await GeminiService.generateSuggestedQuestions(finalName, summaries);
+    } catch {
+      // Fallback
+    }
+
+    if (!Array.isArray(questions) || questions.length === 0) {
+      questions = [
+        `What products or services does ${finalName} offer?`,
+        `How can I contact ${finalName} support directly?`,
+        `What are the pricing, plans or terms on ${domain}?`,
+        `Where is ${finalName} located and what are your business hours?`,
+      ];
+    }
 
     for (let i = 0; i < questions.length; i++) {
       try {
@@ -200,9 +261,15 @@ export class WebsiteService {
         ...website,
         crawl_status: crawlStatus,
       },
-      chatbotConfig,
+      chatbotConfig: {
+        ...chatbotConfig,
+        system_prompt_override: extractedKnowledge.trainingPrompt,
+      },
       detectedTheme,
       pagesCrawled: crawledPages.length,
+      crawledPages,
+      extractedKnowledge,
+      trainingPrompt: extractedKnowledge.trainingPrompt,
       suggestedQuestions: questions,
     };
   }
@@ -233,18 +300,32 @@ export class WebsiteService {
       `suggested_questions?website_id=eq.${websiteId}&order=display_order.asc`
     );
     const pages = await supabaseRequest<CrawledPage[]>(
-      `crawled_pages?website_id=eq.${websiteId}&select=id,url,path,title,description,created_at&order=created_at.desc&limit=20`
+      `crawled_pages?website_id=eq.${websiteId}&select=id,url,path,title,description,clean_text,created_at&order=created_at.desc&limit=20`
     );
     const docs = await supabaseRequest<KnowledgeDocument[]>(
       `knowledge_documents?website_id=eq.${websiteId}&select=id,title,source_type,source_url,content,created_at&order=created_at.desc&limit=30`
     );
 
+    const mappedPages: any[] = (pages || []).map((p: any) => ({
+      url: p.url,
+      path: p.path || "/",
+      title: p.title || "",
+      description: p.description || "",
+      cleanText: p.clean_text || p.content || "",
+    }));
+
+    const extractedKnowledge = CrawlerService.extractAtoZKnowledge(mappedPages, website.domain, website.name);
+    const config = configs[0] || null;
+    const trainingPrompt = config?.system_prompt_override || extractedKnowledge.trainingPrompt;
+
     return {
       website,
-      chatbotConfig: configs[0] || null,
+      chatbotConfig: config ? { ...config, system_prompt_override: trainingPrompt } : null,
       suggestedQuestions: questions || [],
       crawledPages: pages || [],
       knowledgeDocuments: docs || [],
+      extractedKnowledge,
+      trainingPrompt,
     };
   }
 

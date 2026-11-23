@@ -29,10 +29,10 @@ function clearSessionCookie(res: Response): void {
 
 export async function clientLogin(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const username = typeof req.body?.username === "string" ? req.body.username : "";
-    const accessCode = typeof req.body?.accessCode === "string" ? req.body.accessCode : "";
-    if (!username.trim() || accessCode.length < 15 || accessCode.length > 22) {
-      throw new ApiError(400, "INVALID_CREDENTIALS", "Enter a username and a valid 15–22 character access code.");
+    const username = typeof req.body?.username === "string" ? req.body.username.trim() : "";
+    const accessCode = typeof req.body?.accessCode === "string" ? req.body.accessCode.trim() : "";
+    if (!username || accessCode.length < 8) {
+      throw new ApiError(400, "INVALID_CREDENTIALS", "Enter your username/email and access code.");
     }
     const { account, token } = await AccountAuthService.loginClient(username, accessCode);
     setSessionCookie(res, token);
@@ -44,9 +44,9 @@ export async function clientLogin(req: Request, res: Response, next: NextFunctio
 
 export async function adminLogin(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const email = typeof req.body?.email === "string" ? req.body.email : "";
+    const email = typeof req.body?.email === "string" ? req.body.email.trim() : "";
     const password = typeof req.body?.password === "string" ? req.body.password : "";
-    if (!email.trim() || !password) {
+    if (!email || !password) {
       throw new ApiError(400, "INVALID_CREDENTIALS", "Enter your administrator email and password.");
     }
     const { account, token } = await AccountAuthService.loginAdmin(email, password);
@@ -59,7 +59,7 @@ export async function adminLogin(req: Request, res: Response, next: NextFunction
 
 export async function currentAccount(req: AccountAuthRequest, res: Response): Promise<void> {
   if (!req.account) {
-    res.status(401).json({ error: { code: "SESSION_REQUIRED", message: "Sign in to continue." } });
+    res.status(401).json({ error: { code: "UNAUTHORIZED", message: "Sign in to continue." } });
     return;
   }
   res.status(200).json({ authenticated: true, account: req.account });
