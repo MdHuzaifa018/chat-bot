@@ -33,45 +33,6 @@ interface ClientRequest {
   status: RequestStatus;
 }
 
-const seedRequests: ClientRequest[] = [
-  {
-    id: "REQ-104",
-    businessName: "Aroma Roasters",
-    contactName: "Rohan Sharma",
-    email: "rohan@aromaroasters.in",
-    websiteUrl: "https://aromaroasters.in",
-    submittedAt: "2 hours ago",
-    status: "pending",
-  },
-  {
-    id: "REQ-103",
-    businessName: "PixelCraft Studio",
-    contactName: "Meera Nair",
-    email: "meera@pixelcraft.io",
-    websiteUrl: "https://pixelcraft.io",
-    submittedAt: "5 hours ago",
-    status: "pending",
-  },
-  {
-    id: "REQ-102",
-    businessName: "GreenLeaf Organics",
-    contactName: "Ankit Verma",
-    email: "ankit@greenleaforganics.in",
-    websiteUrl: "https://greenleaforganics.in",
-    submittedAt: "1 day ago",
-    status: "accepted",
-  },
-  {
-    id: "REQ-101",
-    businessName: "QuickSpam Deals",
-    contactName: "Unknown User",
-    email: "promo@quickspam.xyz",
-    websiteUrl: "https://quickspam.xyz",
-    submittedAt: "2 days ago",
-    status: "rejected",
-  },
-];
-
 function generateEncryptedCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789abcdefghjkmnpqrstuvwxyz";
   let result = "CR-";
@@ -82,7 +43,7 @@ function generateEncryptedCode(): string {
 }
 
 export default function ClientRequestsPage() {
-  const [requests, setRequests] = useState<ClientRequest[]>(seedRequests);
+  const [requests, setRequests] = useState<ClientRequest[]>([]);
   const [filter, setFilter] = useState<"all" | RequestStatus>("all");
   const [search, setSearch] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -109,14 +70,14 @@ export default function ClientRequestsPage() {
     setError("");
     try {
       const data = await fetchAdminRequests();
-      if (Array.isArray(data) && data.length > 0) {
+      if (Array.isArray(data)) {
         const mapped: ClientRequest[] = data.map((r: any) => ({
           id: r.id,
           businessName: r.businessName || "Unnamed Business",
           contactName: r.contactName || "Contact",
           email: r.email,
           websiteUrl: r.websiteUrl,
-          submittedAt: new Date(r.submittedAt).toLocaleDateString(),
+          submittedAt: r.submittedAt ? new Date(r.submittedAt).toLocaleDateString() : "Recent",
           status:
             r.status === "approved" || r.status === "accepted"
               ? "accepted"
@@ -125,6 +86,8 @@ export default function ClientRequestsPage() {
               : "pending",
         }));
         setRequests(mapped);
+      } else {
+        setRequests([]);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load requests from server.");
@@ -352,92 +315,100 @@ export default function ClientRequestsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#E5F0E1]">
-              {filteredRequests.map((req) => (
-                <tr key={req.id} className="hover:bg-[#F1F7EF]/40 transition-colors">
-                  <td className="px-6 py-4">
-                    <p className="font-semibold text-[#202820]">
-                      {req.businessName}
-                    </p>
-                    <p className="text-xs text-[#647267]">
-                      {req.contactName} • {req.email}
-                    </p>
-                  </td>
-                  <td className="px-6 py-4">
-                    <a
-                      href={req.websiteUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-xs font-mono text-[#254B35] hover:underline inline-flex items-center gap-1"
-                    >
-                      {req.websiteUrl.replace(/^https?:\/\//, "")}
-                      <ExternalLink className="w-3 h-3 text-[#647267]" />
-                    </a>
-                  </td>
-                  <td className="px-6 py-4 text-xs text-[#647267]">
-                    {req.submittedAt}
-                  </td>
-                  <td className="px-6 py-4">
-                    <span
-                      className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium capitalize ${
-                        req.status === "accepted"
-                          ? "bg-[#E5F0E1] text-[#254B35]"
-                          : req.status === "pending"
-                          ? "bg-amber-50 text-amber-700"
-                          : "bg-red-50 text-red-600"
-                      }`}
-                    >
-                      {req.status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <div className="inline-flex items-center justify-end gap-2">
-                      {req.status === "pending" && (
-                        <>
-                          <button
-                            onClick={() => openApproveModal(req)}
-                            className="inline-flex items-center gap-1 px-3.5 py-1.5 bg-[#254B35] text-white rounded-full text-xs font-medium hover:bg-[#1e3d2a] cursor-pointer shadow-sm"
-                          >
-                            <Check className="w-3.5 h-3.5" /> Approve &amp; Mail
-                          </button>
-                          <button
-                            onClick={() => handleReject(req.id)}
-                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-white text-red-600 border border-red-200 rounded-full text-xs font-medium hover:bg-red-50 cursor-pointer"
-                          >
-                            <X className="w-3.5 h-3.5" /> Reject
-                          </button>
-                        </>
-                      )}
-
-                      {req.status === "accepted" && (
-                        <button
-                          onClick={() => handleResetAccessCode(req)}
-                          disabled={isResetting}
-                          title="Generate new Access Code for this client"
-                          className="inline-flex items-center gap-1 px-3 py-1.5 bg-[#F1F7EF] text-[#254B35] border border-[#A8C99B] rounded-full text-xs font-medium hover:bg-[#E5F0E1] cursor-pointer"
-                        >
-                          <KeyRound className="w-3.5 h-3.5" /> Reset Code
-                        </button>
-                      )}
-
-                      {/* Delete Button */}
-                      <button
-                        onClick={() => handleDelete(req.id)}
-                        title="Delete this request"
-                        className="p-1.5 text-[#647267] hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                        aria-label="Delete request"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {filteredRequests.length === 0 && (
+              {isLoading ? (
                 <tr>
                   <td colSpan={5} className="px-6 py-12 text-center text-sm text-[#647267]">
-                    No access requests match your criteria.
+                    <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-[#254B35]" />
+                    Fetching real client requests from database...
                   </td>
                 </tr>
+              ) : filteredRequests.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-6 py-12 text-center text-sm text-[#647267]">
+                    No access requests found.
+                  </td>
+                </tr>
+              ) : (
+                filteredRequests.map((req) => (
+                  <tr key={req.id} className="hover:bg-[#F1F7EF]/40 transition-colors">
+                    <td className="px-6 py-4">
+                      <p className="font-semibold text-[#202820]">
+                        {req.businessName}
+                      </p>
+                      <p className="text-xs text-[#647267]">
+                        {req.contactName} • {req.email}
+                      </p>
+                    </td>
+                    <td className="px-6 py-4">
+                      <a
+                        href={req.websiteUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs font-mono text-[#254B35] hover:underline inline-flex items-center gap-1"
+                      >
+                        {req.websiteUrl.replace(/^https?:\/\//, "")}
+                        <ExternalLink className="w-3 h-3 text-[#647267]" />
+                      </a>
+                    </td>
+                    <td className="px-6 py-4 text-xs text-[#647267]">
+                      {req.submittedAt}
+                    </td>
+                    <td className="px-6 py-4">
+                      <span
+                        className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium capitalize ${
+                          req.status === "accepted"
+                            ? "bg-[#E5F0E1] text-[#254B35]"
+                            : req.status === "pending"
+                            ? "bg-amber-50 text-amber-700"
+                            : "bg-red-50 text-red-600"
+                        }`}
+                      >
+                        {req.status}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="inline-flex items-center justify-end gap-2">
+                        {req.status === "pending" && (
+                          <>
+                            <button
+                              onClick={() => openApproveModal(req)}
+                              className="inline-flex items-center gap-1 px-3.5 py-1.5 bg-[#254B35] text-white rounded-full text-xs font-medium hover:bg-[#1e3d2a] cursor-pointer shadow-sm"
+                            >
+                              <Check className="w-3.5 h-3.5" /> Approve &amp; Mail
+                            </button>
+                            <button
+                              onClick={() => handleReject(req.id)}
+                              className="inline-flex items-center gap-1 px-3 py-1.5 bg-white text-red-600 border border-red-200 rounded-full text-xs font-medium hover:bg-red-50 cursor-pointer"
+                            >
+                              <X className="w-3.5 h-3.5" /> Reject
+                            </button>
+                          </>
+                        )}
+
+                        {req.status === "accepted" && (
+                          <button
+                            onClick={() => handleResetAccessCode(req)}
+                            disabled={isResetting}
+                            title="Generate new Access Code for this client"
+                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-[#F1F7EF] text-[#254B35] border border-[#A8C99B] rounded-full text-xs font-medium hover:bg-[#E5F0E1] cursor-pointer"
+                          >
+                            <KeyRound className="w-3.5 h-3.5" /> Reset Code
+                          </button>
+                        )}
+
+                        {/* Delete Button */}
+                        <button
+                          onClick={() => handleDelete(req.id)}
+                          title="Delete this request"
+                          className="p-1.5 text-[#647267] hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                          aria-label="Delete request"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
               )}
             </tbody>
           </table>

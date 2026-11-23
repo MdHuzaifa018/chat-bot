@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   Globe,
-  Activity,
+  Users,
   Clock,
   XCircle,
   CheckCircle2,
@@ -20,58 +20,46 @@ interface WebsiteItem {
   id: string;
   name: string;
   url: string;
-  latency?: string;
-  dailyChats?: number;
-  status: string;
+  domain?: string;
+  crawl_status?: string;
+  created_at?: string;
+  last_crawled_at?: string;
 }
 
-const defaultWebsites: WebsiteItem[] = [
-  {
-    id: "seed-1",
-    name: "GreenLeaf Organics",
-    url: "https://greenleaforganics.in",
-    latency: "142 ms",
-    dailyChats: 412,
-    status: "Healthy",
-  },
-  {
-    id: "seed-2",
-    name: "UrbanDesk Furniture",
-    url: "https://urbandesk.co",
-    latency: "168 ms",
-    dailyChats: 289,
-    status: "Healthy",
-  },
-  {
-    id: "seed-3",
-    name: "SwiftPay Logistics",
-    url: "https://swiftpaylogistics.com",
-    latency: "310 ms",
-    dailyChats: 840,
-    status: "High Load",
-  },
-  {
-    id: "seed-4",
-    name: "NovaSkin Studio",
-    url: "https://novaskin.store",
-    latency: "129 ms",
-    dailyChats: 154,
-    status: "Healthy",
-  },
-];
+interface AdminMetrics {
+  totalUsers: number;
+  totalWebsites: number;
+  totalChatbots: number;
+  totalConversations: number;
+  totalMessages: number;
+  pendingRequests: number;
+  rejectedRequests: number;
+  acceptedRequests: number;
+  totalRequests: number;
+  websitesThisWeek: number;
+  geminiStatus: string;
+  geminiModel: string;
+  uptimeSeconds: number;
+}
 
 export default function AdminOverviewPage() {
-  const [metrics, setMetrics] = useState({
-    totalWebsites: 48,
-    totalChatbots: 48,
-    totalConversations: 14820,
-    pendingRequests: 7,
-    rejectedRequests: 12,
-    geminiStatus: "Connected",
+  const [metrics, setMetrics] = useState<AdminMetrics>({
+    totalUsers: 0,
+    totalWebsites: 0,
+    totalChatbots: 0,
+    totalConversations: 0,
+    totalMessages: 0,
+    pendingRequests: 0,
+    rejectedRequests: 0,
+    acceptedRequests: 0,
+    totalRequests: 0,
+    websitesThisWeek: 0,
+    geminiStatus: "Checking...",
     geminiModel: "gemini-3.5-flash-lite",
+    uptimeSeconds: 0,
   });
 
-  const [websites, setWebsites] = useState<WebsiteItem[]>(defaultWebsites);
+  const [websites, setWebsites] = useState<WebsiteItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -81,35 +69,27 @@ export default function AdminOverviewPage() {
     try {
       const res = await fetchAdminOverview();
       if (res?.stats) {
-        setMetrics((prev) => ({
-          ...prev,
-          totalWebsites: res.stats.totalWebsites > 0 ? res.stats.totalWebsites : 48,
-          totalChatbots: res.stats.totalChatbots > 0 ? res.stats.totalChatbots : 48,
-          totalConversations:
-            res.stats.totalConversations > 0
-              ? res.stats.totalConversations + 14800
-              : 14820,
-          pendingRequests: res.stats.pendingRequests ?? prev.pendingRequests,
+        setMetrics({
+          totalUsers: Number(res.stats.totalUsers ?? 0),
+          totalWebsites: Number(res.stats.totalWebsites ?? 0),
+          totalChatbots: Number(res.stats.totalChatbots ?? 0),
+          totalConversations: Number(res.stats.totalConversations ?? 0),
+          totalMessages: Number(res.stats.totalMessages ?? 0),
+          pendingRequests: Number(res.stats.pendingRequests ?? 0),
+          rejectedRequests: Number(res.stats.rejectedRequests ?? 0),
+          acceptedRequests: Number(res.stats.acceptedRequests ?? 0),
+          totalRequests: Number(res.stats.totalRequests ?? 0),
+          websitesThisWeek: Number(res.stats.websitesThisWeek ?? 0),
           geminiStatus: res.stats.geminiStatus || "Connected",
           geminiModel: res.stats.geminiModel || "gemini-3.5-flash-lite",
-        }));
+          uptimeSeconds: Number(res.stats.uptimeSeconds ?? 0),
+        });
       }
 
-      if (Array.isArray(res?.websites) && res.websites.length > 0) {
-        const liveSites: WebsiteItem[] = res.websites.map((w: any, index: number) => ({
-          id: w.id,
-          name: w.name || `Client Site #${index + 1}`,
-          url: w.url || "https://example.com",
-          latency: `${135 + ((index * 23) % 65)} ms`,
-          dailyChats: 120 + ((index * 73) % 450),
-          status:
-            w.crawl_status === "failed"
-              ? "High Load"
-              : w.crawl_status === "in_progress"
-              ? "Indexing"
-              : "Healthy",
-        }));
-        setWebsites(liveSites);
+      if (Array.isArray(res?.websites)) {
+        setWebsites(res.websites);
+      } else {
+        setWebsites([]);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load admin overview.");
@@ -121,6 +101,14 @@ export default function AdminOverviewPage() {
   useEffect(() => {
     loadData();
   }, []);
+
+  const formatUptime = (seconds: number) => {
+    if (!seconds || seconds <= 0) return "Operational (100%)";
+    const hours = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    if (hours > 0) return `${hours}h ${mins}m active`;
+    return `${mins}m active`;
+  };
 
   return (
     <div className="space-y-8">
@@ -159,27 +147,29 @@ export default function AdminOverviewPage() {
               <Globe className="w-5 h-5" />
             </div>
             <span className="text-xs font-medium text-[#254B35] bg-[#E5F0E1] px-2.5 py-1 rounded-full">
-              +6 this week
+              {metrics.websitesThisWeek > 0 ? `+${metrics.websitesThisWeek} this week` : "Live"}
             </span>
           </div>
           <p className="text-xs font-medium text-[#647267]">Active Websites</p>
           <h3 className="text-3xl font-semibold text-[#202820] mt-1">
-            {metrics.totalWebsites}
+            {isLoading ? "..." : metrics.totalWebsites}
           </h3>
         </div>
 
-        {/* Avg. AI Latency */}
+        {/* Registered Clients */}
         <div className="bg-white p-6 rounded-2xl border border-[#E5F0E1] shadow-sm hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between mb-4">
             <div className="w-10 h-10 rounded-xl bg-[#F1F7EF] flex items-center justify-center text-[#254B35]">
-              <Activity className="w-5 h-5" />
+              <Users className="w-5 h-5" />
             </div>
             <span className="text-xs font-medium text-[#254B35] bg-[#E5F0E1] px-2.5 py-1 rounded-full">
-              Optimal
+              {metrics.totalUsers} Onboarded
             </span>
           </div>
-          <p className="text-xs font-medium text-[#647267]">Avg. AI Latency</p>
-          <h3 className="text-3xl font-semibold text-[#202820] mt-1">164 ms</h3>
+          <p className="text-xs font-medium text-[#647267]">Client Accounts</p>
+          <h3 className="text-3xl font-semibold text-[#202820] mt-1">
+            {isLoading ? "..." : metrics.totalUsers}
+          </h3>
         </div>
 
         {/* Pending Requests */}
@@ -197,7 +187,7 @@ export default function AdminOverviewPage() {
           </div>
           <p className="text-xs font-medium text-[#647267]">Pending Requests</p>
           <h3 className="text-3xl font-semibold text-[#202820] mt-1">
-            {metrics.pendingRequests}
+            {isLoading ? "..." : metrics.pendingRequests}
           </h3>
         </div>
 
@@ -207,11 +197,13 @@ export default function AdminOverviewPage() {
             <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center text-red-600">
               <XCircle className="w-5 h-5" />
             </div>
-            <span className="text-xs font-medium text-[#647267]">All time</span>
+            <span className="text-xs font-medium text-[#647267]">
+              {metrics.acceptedRequests} accepted
+            </span>
           </div>
           <p className="text-xs font-medium text-[#647267]">Rejected Requests</p>
           <h3 className="text-3xl font-semibold text-[#202820] mt-1">
-            {metrics.rejectedRequests}
+            {isLoading ? "..." : metrics.rejectedRequests}
           </h3>
         </div>
       </div>
@@ -223,8 +215,8 @@ export default function AdminOverviewPage() {
             <Server className="w-5 h-5 text-[#A8C99B]" />
           </div>
           <div>
-            <p className="text-xs text-[#E5F0E1]/80">API Uptime (30d)</p>
-            <p className="text-xl font-semibold">99.94%</p>
+            <p className="text-xs text-[#E5F0E1]/80">API Health &amp; Uptime</p>
+            <p className="text-xl font-semibold">{formatUptime(metrics.uptimeSeconds)}</p>
           </div>
         </div>
 
@@ -233,9 +225,13 @@ export default function AdminOverviewPage() {
             <MessageSquare className="w-5 h-5 text-[#A8C99B]" />
           </div>
           <div>
-            <p className="text-xs text-[#E5F0E1]/80">Messages Handled Today</p>
+            <p className="text-xs text-[#E5F0E1]/80">Messages &amp; Chats Handled</p>
             <p className="text-xl font-semibold">
-              {metrics.totalConversations.toLocaleString()}
+              {isLoading
+                ? "..."
+                : metrics.totalMessages > 0
+                ? metrics.totalMessages.toLocaleString()
+                : metrics.totalConversations.toLocaleString()}
             </p>
           </div>
         </div>
@@ -261,7 +257,7 @@ export default function AdminOverviewPage() {
               Websites Using SupportAI
             </h2>
             <p className="text-xs text-[#647267]">
-              Live embed status and response latency per client site.
+              Live client websites registered and managed in Supabase database.
             </p>
           </div>
         </div>
@@ -270,51 +266,68 @@ export default function AdminOverviewPage() {
           <table className="w-full text-left text-sm">
             <thead className="bg-[#F1F7EF] text-xs uppercase text-[#647267]">
               <tr>
-                <th className="px-6 py-4 font-semibold">Business</th>
+                <th className="px-6 py-4 font-semibold">Business / Site Name</th>
                 <th className="px-6 py-4 font-semibold">Website URL</th>
-                <th className="px-6 py-4 font-semibold">Avg. Latency</th>
-                <th className="px-6 py-4 font-semibold">Chats / Day</th>
-                <th className="px-6 py-4 font-semibold">Status</th>
+                <th className="px-6 py-4 font-semibold">Domain</th>
+                <th className="px-6 py-4 font-semibold">Created</th>
+                <th className="px-6 py-4 font-semibold">Crawl Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#E5F0E1]">
-              {websites.map((site) => (
-                <tr key={site.id} className="hover:bg-[#F1F7EF]/50 transition-colors">
-                  <td className="px-6 py-4 font-medium text-[#202820]">
-                    {site.name}
-                  </td>
-                  <td className="px-6 py-4 text-[#647267] font-mono text-xs">
-                    <a
-                      href={site.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="hover:underline hover:text-[#254B35] inline-flex items-center gap-1"
-                    >
-                      {site.url}
-                      <ExternalLink className="w-3 h-3 text-[#647267]" />
-                    </a>
-                  </td>
-                  <td className="px-6 py-4 font-mono text-xs text-[#202820]">
-                    {site.latency}
-                  </td>
-                  <td className="px-6 py-4 text-[#202820] font-medium">
-                    {site.dailyChats}
-                  </td>
-                  <td className="px-6 py-4">
-                    <span
-                      className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
-                        site.status === "Healthy"
-                          ? "bg-[#E5F0E1] text-[#254B35]"
-                          : site.status === "Indexing"
-                          ? "bg-blue-50 text-blue-700"
-                          : "bg-amber-50 text-amber-700"
-                      }`}
-                    >
-                      {site.status}
-                    </span>
+              {isLoading ? (
+                <tr>
+                  <td colSpan={5} className="px-6 py-12 text-center text-sm text-[#647267]">
+                    <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-[#254B35]" />
+                    Loading client websites from database...
                   </td>
                 </tr>
-              ))}
+              ) : websites.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-6 py-12 text-center text-sm text-[#647267]">
+                    No client websites registered yet. Websites added by clients will appear here.
+                  </td>
+                </tr>
+              ) : (
+                websites.map((site) => (
+                  <tr key={site.id} className="hover:bg-[#F1F7EF]/50 transition-colors">
+                    <td className="px-6 py-4 font-medium text-[#202820]">
+                      {site.name || site.domain || "Client Website"}
+                    </td>
+                    <td className="px-6 py-4 text-[#647267] font-mono text-xs">
+                      <a
+                        href={site.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="hover:underline hover:text-[#254B35] inline-flex items-center gap-1"
+                      >
+                        {site.url}
+                        <ExternalLink className="w-3 h-3 text-[#647267]" />
+                      </a>
+                    </td>
+                    <td className="px-6 py-4 font-mono text-xs text-[#202820]">
+                      {site.domain || new URL(site.url || "https://example.com").hostname}
+                    </td>
+                    <td className="px-6 py-4 text-xs text-[#647267]">
+                      {site.created_at ? new Date(site.created_at).toLocaleDateString() : "Active"}
+                    </td>
+                    <td className="px-6 py-4">
+                      <span
+                        className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium capitalize ${
+                          site.crawl_status === "completed"
+                            ? "bg-[#E5F0E1] text-[#254B35]"
+                            : site.crawl_status === "in_progress"
+                            ? "bg-blue-50 text-blue-700"
+                            : site.crawl_status === "failed"
+                            ? "bg-red-50 text-red-600"
+                            : "bg-gray-100 text-gray-700"
+                        }`}
+                      >
+                        {site.crawl_status || "idle"}
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

@@ -40,13 +40,24 @@ function normalizedPermissions(input: unknown): AdminPermissions {
 export class AdminController {
   static async getOverview(_req: AccountAuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
-      const [users, websites, chatbots, conversations, requests] = await Promise.all([
+      const [users, websites, chatbots, conversations, requests, messages] = await Promise.all([
         supabaseRequest<Array<Record<string, unknown>>>("client_accounts?select=id,email,business_name,username,created_at&order=created_at.desc&limit=1000"),
-        supabaseRequest<Array<Record<string, unknown>>>("websites?select=id,name,url,domain,crawl_status,created_at&order=created_at.desc&limit=1000"),
+        supabaseRequest<Array<Record<string, unknown>>>("websites?select=id,name,url,domain,crawl_status,created_at,last_crawled_at&order=created_at.desc&limit=1000"),
         supabaseRequest<Array<Record<string, unknown>>>("chatbot_configs?select=id,public_chatbot_id,chatbot_name,is_published&limit=1000"),
-        supabaseRequest<Array<Record<string, unknown>>>("widget_conversations?select=id&limit=1000"),
-        supabaseRequest<Array<Record<string, unknown>>>("client_access_requests?status=eq.pending&select=id&limit=1000"),
+        supabaseRequest<Array<Record<string, unknown>>>("widget_conversations?select=id,created_at&limit=5000"),
+        supabaseRequest<Array<{ id: string; status: string; created_at: string }>>("client_access_requests?select=id,status,created_at&order=created_at.desc&limit=1000"),
+        supabaseRequest<Array<{ id: string }>>("widget_messages?select=id&limit=10000").catch(() => []),
       ]);
+
+      const now = Date.now();
+      const oneWeekMs = 7 * 24 * 60 * 60 * 1000;
+      const websitesThisWeek = websites.filter(
+        (w) => w.created_at && now - new Date(w.created_at as string).getTime() <= oneWeekMs
+      ).length;
+
+      const pendingRequests = requests.filter((r) => r.status === "pending").length;
+      const rejectedRequests = requests.filter((r) => r.status === "rejected").length;
+      const acceptedRequests = requests.filter((r) => r.status === "approved" || r.status === "accepted").length;
 
       res.status(200).json({
         data: {
@@ -55,9 +66,15 @@ export class AdminController {
             totalWebsites: websites.length,
             totalChatbots: chatbots.length,
             totalConversations: conversations.length,
-            pendingRequests: requests.length,
+            totalMessages: Array.isArray(messages) ? messages.length : 0,
+            pendingRequests,
+            rejectedRequests,
+            acceptedRequests,
+            totalRequests: requests.length,
+            websitesThisWeek,
             geminiStatus: env.gemini.isConfigured ? "Connected" : "Not configured",
             geminiModel: env.gemini.model,
+            uptimeSeconds: Math.floor(process.uptime()),
           },
           users,
           websites,
