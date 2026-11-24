@@ -41,9 +41,6 @@ import {
   updateChatbotConfig,
   updateSuggestedQuestions,
   addKnowledgeDoc,
-  fetchWebsiteInquiries,
-  deleteWebsiteInquiry,
-  type CustomerInquiryItem,
   apiRequest,
   API_BASE,
 } from "@/api/saasApi";
@@ -84,6 +81,16 @@ function toValid7Hex(hex?: string, fallback = "#000000"): string {
     return clean.toUpperCase();
   }
   return fallback;
+}
+
+function cleanHtmlEntities(str: string): string {
+  if (!str) return "";
+  return str
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
 }
 
 export default function ChatbotSettingsPage() {
@@ -151,39 +158,6 @@ export default function ChatbotSettingsPage() {
   const [previewContactMessage, setPreviewContactMessage] = useState("");
   const [previewContactSending, setPreviewContactSending] = useState(false);
 
-  // Received Customer Inquiries State
-  const [inquiries, setInquiries] = useState<CustomerInquiryItem[]>([]);
-  const [isLoadingInquiries, setIsLoadingInquiries] = useState(false);
-  const [deletingInquiryId, setDeletingInquiryId] = useState<string | null>(null);
-
-  const loadInquiries = async (targetSiteId?: string) => {
-    const id = targetSiteId || websiteId;
-    if (!id) return;
-    setIsLoadingInquiries(true);
-    try {
-      const data = await fetchWebsiteInquiries(id);
-      setInquiries(data);
-    } catch (err) {
-      console.warn("Failed to load inquiries:", err);
-    } finally {
-      setIsLoadingInquiries(false);
-    }
-  };
-
-  const handleDeleteInquiry = async (inquiryId: string) => {
-    if (!websiteId) return;
-    setDeletingInquiryId(inquiryId);
-    try {
-      await deleteWebsiteInquiry(websiteId, inquiryId);
-      setInquiries((prev) => prev.filter((i) => i.id !== inquiryId));
-    } catch (err) {
-      console.warn("Failed to delete inquiry:", err);
-      setInquiries((prev) => prev.filter((i) => i.id !== inquiryId));
-    } finally {
-      setDeletingInquiryId(null);
-    }
-  };
-
   // Chatbot Training & A-to-Z Knowledge Base State
   const [trainingPrompt, setTrainingPrompt] = useState<string>("");
   const [extractedKnowledge, setExtractedKnowledge] = useState<any>(null);
@@ -214,7 +188,6 @@ export default function ChatbotSettingsPage() {
           const activeSite = sites[0];
           setWebsiteId(activeSite.id);
           setWebsiteUrl(activeSite.url || "");
-          loadInquiries(activeSite.id);
 
           const details = await fetchWebsiteDetails(activeSite.id);
           if (!isMounted) return;
@@ -225,7 +198,7 @@ export default function ChatbotSettingsPage() {
               setPublicChatbotId(cfg.public_chatbot_id);
               localStorage.setItem("supportai_public_chatbot_id", cfg.public_chatbot_id);
             }
-            if (cfg.chatbot_name) setBotName(cfg.chatbot_name);
+            if (cfg.chatbot_name) setBotName(cleanHtmlEntities(cfg.chatbot_name));
             if (cfg.welcome_message) setWelcomeMessage(cfg.welcome_message);
             if (cfg.primary_color) setPrimaryColor(cfg.primary_color);
             if (cfg.secondary_color) setSecondaryColor(cfg.secondary_color);
@@ -235,7 +208,7 @@ export default function ChatbotSettingsPage() {
               localStorage.setItem("supportai_fallback_email", (cfg as any).fallback_recipient_email);
             }
           } else {
-            setBotName(`${activeSite.name || "Support"} Assistant`);
+            setBotName(cleanHtmlEntities(`${activeSite.name || "Support"} Assistant`));
           }
 
           const savedEmail = localStorage.getItem("supportai_fallback_email");
@@ -325,7 +298,7 @@ export default function ChatbotSettingsPage() {
           try {
             const parsed = JSON.parse(raw);
             if (parsed.websiteUrl) setWebsiteUrl(parsed.websiteUrl);
-            if (parsed.botName) setBotName(parsed.botName);
+            if (parsed.botName) setBotName(cleanHtmlEntities(parsed.botName));
             if (parsed.welcomeMessage) setWelcomeMessage(parsed.welcomeMessage);
             if (parsed.primaryColor) setPrimaryColor(parsed.primaryColor);
             if (parsed.secondaryColor) setSecondaryColor(parsed.secondaryColor);
@@ -445,7 +418,7 @@ export default function ChatbotSettingsPage() {
           setPublicChatbotId(cfg.public_chatbot_id);
           localStorage.setItem("supportai_public_chatbot_id", cfg.public_chatbot_id);
         }
-        if (cfg?.chatbot_name) setBotName(cfg.chatbot_name);
+        if (cfg?.chatbot_name) setBotName(cleanHtmlEntities(cfg.chatbot_name));
         if (cfg?.welcome_message) setWelcomeMessage(cfg.welcome_message);
 
         const prim = extracted.primaryColor || cfg?.primary_color;
@@ -875,128 +848,324 @@ export default function ChatbotSettingsPage() {
             )}
           </div>
 
-          {/* 2. Received Customer Queries & Inquiries */}
+                    {/* 2. Chatbot Training & A-to-Z Knowledge Base */}
           <div className="bg-white rounded-3xl border border-[#E5F0E1] p-6 shadow-sm space-y-5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-[#E5F0E1] flex items-center justify-center text-[#254B35] shrink-0">
-                  <MessageSquare className="w-5 h-5" />
-                </div>
+              <div className="flex items-center gap-2">
+                <Brain className="w-5 h-5 text-[#254B35]" />
                 <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-base font-semibold text-[#202820]">
-                      2. Received Customer Queries &amp; Inquiries
-                    </h3>
-                    <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#254B35] text-white">
-                      {inquiries.length}
-                    </span>
-                  </div>
+                  <h3 className="text-base font-semibold text-[#202820]">
+                    2. AI Chatbot Training &amp; A-to-Z Knowledge Base
+                  </h3>
                   <p className="text-xs text-[#647267]">
-                    Live queries and custom questions submitted by visitors through your chatbot widget.
+                    All website information is extracted from A-to-Z and loaded into the chatbot training prompt.
                   </p>
                 </div>
               </div>
-
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => loadInquiries()}
-                  disabled={isLoadingInquiries || !websiteId}
-                  className="px-3.5 py-2 rounded-xl border border-[#E5F0E1] hover:bg-[#F1F7EF] text-xs font-medium text-[#254B35] flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
-                  title="Refresh customer inquiries"
-                >
-                  <RotateCcw className={`w-3.5 h-3.5 ${isLoadingInquiries ? "animate-spin" : ""}`} />
-                  <span>Refresh Queries</span>
-                </button>
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-medium bg-[#E5F0E1] text-[#254B35]">
+                  <Sparkles className="w-3.5 h-3.5 text-[#254B35]" />
+                  {crawledPagesList.length > 0
+                    ? `${crawledPagesList.length} Pages Trained`
+                    : trainingPrompt
+                    ? "Trained on Site"
+                    : "Ready to Train"}
+                </span>
               </div>
             </div>
 
-            {/* Inquiries Content */}
-            {isLoadingInquiries && inquiries.length === 0 ? (
-              <div className="py-12 text-center text-xs text-[#647267] flex items-center justify-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin text-[#254B35]" />
-                <span>Loading received customer inquiries...</span>
+            {/* Quick Status Bar */}
+            {retrainSuccessMsg && (
+              <div className="p-3 rounded-xl bg-[#E5F0E1] text-[#254B35] text-xs font-medium flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0 text-[#254B35]" />
+                <span>{retrainSuccessMsg}</span>
               </div>
-            ) : inquiries.length === 0 ? (
-              <div className="p-8 rounded-2xl bg-[#F8FAF9] border border-dashed border-[#CBD5E1] text-center space-y-2.5">
-                <div className="w-11 h-11 rounded-full bg-[#E5F0E1] text-[#254B35] flex items-center justify-center mx-auto">
-                  <Inbox className="w-5 h-5" />
-                </div>
-                <h4 className="text-sm font-semibold text-[#202820]">No Customer Queries Yet</h4>
-                <p className="text-xs text-[#647267] max-w-md mx-auto leading-relaxed">
-                  When visitors click &quot;Ask Custom Question / Submit Query&quot; on your chatbot widget, their queries, contact info, and timestamps will appear here in real time.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
-                {inquiries.map((inq) => (
-                  <div
-                    key={inq.id}
-                    className="p-4 rounded-2xl bg-[#F8FAF9] border border-[#E5F0E1] hover:border-[#A8C99B] transition-all space-y-2.5"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-full bg-[#254B35] text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs">
-                          {inq.name ? inq.name.charAt(0).toUpperCase() : "U"}
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h4 className="font-semibold text-xs text-[#202820]">{inq.name}</h4>
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-[#E5F0E1] text-[#254B35]">
-                              ● New Query
-                            </span>
-                          </div>
-                          <a
-                            href={`mailto:${inq.email}?subject=Re: ${encodeURIComponent(inq.subject || "Your Inquiry")}`}
-                            className="text-[11px] text-[#647267] hover:text-[#254B35] hover:underline flex items-center gap-1 font-mono mt-0.5"
-                          >
-                            <Mail className="w-3 h-3" />
-                            {inq.email}
-                          </a>
-                        </div>
-                      </div>
+            )}
 
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-[11px] text-[#94A3B8]">
-                          {inq.created_at ? new Date(inq.created_at).toLocaleString([], { dateStyle: "short", timeStyle: "short" }) : "Recent"}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteInquiry(inq.id)}
-                          disabled={deletingInquiryId === inq.id}
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
-                          title="Delete inquiry"
-                          aria-label="Delete inquiry"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+            {/* Tab Navigation */}
+            <div className="flex items-center gap-1 border-b border-[#E5F0E1] pb-2 overflow-x-auto text-xs">
+              <button
+                type="button"
+                onClick={() => setActiveKnowledgeTab("overview")}
+                className={`px-3 py-1.5 rounded-lg font-medium transition-all cursor-pointer flex items-center gap-1.5 ${
+                  activeKnowledgeTab === "overview"
+                    ? "bg-[#254B35] text-white shadow-xs"
+                    : "text-[#647267] hover:text-[#202820] hover:bg-[#F1F7EF]"
+                }`}
+              >
+                <BookOpen className="w-3.5 h-3.5" /> A-to-Z Info
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveKnowledgeTab("prompt")}
+                className={`px-3 py-1.5 rounded-lg font-medium transition-all cursor-pointer flex items-center gap-1.5 ${
+                  activeKnowledgeTab === "prompt"
+                    ? "bg-[#254B35] text-white shadow-xs"
+                    : "text-[#647267] hover:text-[#202820] hover:bg-[#F1F7EF]"
+                }`}
+              >
+                <FileText className="w-3.5 h-3.5" /> Training Prompt
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveKnowledgeTab("pages")}
+                className={`px-3 py-1.5 rounded-lg font-medium transition-all cursor-pointer flex items-center gap-1.5 ${
+                  activeKnowledgeTab === "pages"
+                    ? "bg-[#254B35] text-white shadow-xs"
+                    : "text-[#647267] hover:text-[#202820] hover:bg-[#F1F7EF]"
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5" /> Crawled Pages ({crawledPagesList.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveKnowledgeTab("custom")}
+                className={`px-3 py-1.5 rounded-lg font-medium transition-all cursor-pointer flex items-center gap-1.5 ${
+                  activeKnowledgeTab === "custom"
+                    ? "bg-[#254B35] text-white shadow-xs"
+                    : "text-[#647267] hover:text-[#202820] hover:bg-[#F1F7EF]"
+                }`}
+              >
+                <Plus className="w-3.5 h-3.5" /> Add Knowledge
+              </button>
+            </div>
+
+            {/* TAB 1: A-to-Z Extracted Knowledge Overview */}
+            {activeKnowledgeTab === "overview" && (
+              <div className="space-y-4 pt-1">
+                {extractedKnowledge ? (
+                  <div className="space-y-3">
+                    {/* Company & Tagline */}
+                    <div className="p-3.5 rounded-2xl bg-[#F8FAF9] border border-[#E5F0E1]">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Briefcase className="w-4 h-4 text-[#254B35]" />
+                        <h4 className="text-xs font-semibold text-[#202820]">
+                          Company / Business Overview
+                        </h4>
                       </div>
+                      <p className="text-xs text-[#202820] font-medium">
+                        {extractedKnowledge.businessName}
+                        {extractedKnowledge.domain && (
+                          <span className="text-[#647267] font-normal ml-1">
+                            ({extractedKnowledge.domain})
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-xs text-[#647267] mt-1 leading-relaxed">
+                        {extractedKnowledge.overview || extractedKnowledge.tagline}
+                      </p>
                     </div>
 
-                    {inq.subject && inq.subject !== "Custom Question" && inq.subject !== "Custom Query" && (
-                      <div className="text-[11px] font-medium text-[#254B35] bg-white px-2.5 py-1 rounded-md border border-[#E5F0E1] inline-block">
-                        Topic: {inq.subject}
+                    {/* Services & Products */}
+                    {Array.isArray(extractedKnowledge.services) && extractedKnowledge.services.length > 0 && (
+                      <div className="p-3.5 rounded-2xl bg-[#F8FAF9] border border-[#E5F0E1]">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Layers className="w-4 h-4 text-[#254B35]" />
+                          <h4 className="text-xs font-semibold text-[#202820]">
+                            Identified Services &amp; Products ({extractedKnowledge.services.length})
+                          </h4>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {extractedKnowledge.services.map((srv: string, idx: number) => (
+                            <span
+                              key={idx}
+                              className="text-[11px] px-2.5 py-1 rounded-lg bg-white border border-[#E5F0E1] text-[#202820]"
+                            >
+                              • {srv}
+                            </span>
+                          ))}
+                        </div>
                       </div>
                     )}
 
-                    <div className="p-3 bg-white rounded-xl border border-[#E5F0E1] text-xs text-[#202820] leading-relaxed whitespace-pre-wrap">
-                      {inq.message}
-                    </div>
+                    {/* Pricing & Plans */}
+                    {Array.isArray(extractedKnowledge.pricing) && extractedKnowledge.pricing.length > 0 && (
+                      <div className="p-3.5 rounded-2xl bg-[#F8FAF9] border border-[#E5F0E1]">
+                        <div className="flex items-center gap-2 mb-2">
+                          <DollarSign className="w-4 h-4 text-[#254B35]" />
+                          <h4 className="text-xs font-semibold text-[#202820]">
+                            Pricing, Packages &amp; Policies
+                          </h4>
+                        </div>
+                        <ul className="text-xs text-[#647267] space-y-1">
+                          {extractedKnowledge.pricing.map((prc: string, idx: number) => (
+                            <li key={idx} className="flex items-start gap-1.5">
+                              <span className="text-[#254B35] font-bold">•</span>
+                              <span>{prc}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
 
-                    <div className="flex items-center justify-end pt-1">
-                      <a
-                        href={`mailto:${inq.email}?subject=Re: ${encodeURIComponent(inq.subject || "SupportAI Inquiry")}&body=${encodeURIComponent(`Hi ${inq.name},\n\nThank you for reaching out to us!\n\nRegarding your inquiry:\n"${inq.message}"\n\n`)}`}
-                        className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-lg bg-[#254B35] text-white text-[11px] font-medium hover:bg-[#1e3d2a] transition-colors shadow-xs"
-                      >
-                        <Mail className="w-3 h-3" />
-                        <span>Reply via Email</span>
-                      </a>
+                    {/* Contact & Hours */}
+                    <div className="p-3.5 rounded-2xl bg-[#F8FAF9] border border-[#E5F0E1]">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Phone className="w-4 h-4 text-[#254B35]" />
+                        <h4 className="text-xs font-semibold text-[#202820]">
+                          Customer Contact &amp; Support Info
+                        </h4>
+                      </div>
+                      <div className="grid sm:grid-cols-2 gap-2 text-xs">
+                        <div className="flex items-center gap-1.5 text-[#202820]">
+                          <Mail className="w-3.5 h-3.5 text-[#647267]" />
+                          <span className="truncate">
+                            {extractedKnowledge.contactInfo?.emails?.[0] || "Available on site"}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[#202820]">
+                          <Phone className="w-3.5 h-3.5 text-[#647267]" />
+                          <span className="truncate">
+                            {extractedKnowledge.contactInfo?.phones?.[0] || "Available on site"}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[#202820] sm:col-span-2">
+                          <Clock className="w-3.5 h-3.5 text-[#647267]" />
+                          <span>{extractedKnowledge.contactInfo?.hours || "24/7 AI Online Assistance"}</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                ))}
+                ) : (
+                  <div className="text-center py-8 px-4 rounded-2xl bg-[#F8FAF9] border border-dashed border-[#E5F0E1]">
+                    <Brain className="w-8 h-8 text-[#A8C99B] mx-auto mb-2 opacity-80" />
+                    <p className="text-xs font-medium text-[#202820]">
+                      No website data fetched yet
+                    </p>
+                    <p className="text-[11px] text-[#647267] mt-1 max-w-sm mx-auto">
+                      Enter your website URL above and click <strong>"Fetch &amp; Adapt"</strong>. Our crawler will index all pages and train the chatbot with A-to-Z details.
+                    </p>
+                  </div>
+                )}
               </div>
             )}
+
+            {/* TAB 2: Full Master Training Prompt */}
+            {activeKnowledgeTab === "prompt" && (
+              <div className="space-y-3 pt-1">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-medium text-[#647267] flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-[#254B35]" />
+                    Compiled System Knowledge Prompt (Injected into Chatbot)
+                  </label>
+                  <span className="text-[11px] text-[#647267]">
+                    {trainingPrompt.length} characters
+                  </span>
+                </div>
+                <textarea
+                  rows={9}
+                  value={trainingPrompt}
+                  onChange={(e) => setTrainingPrompt(e.target.value)}
+                  placeholder="The complete A-to-Z training prompt will appear here after fetching your website..."
+                  className="w-full bg-[#F1F7EF] border border-[#E5F0E1] rounded-xl p-3 text-xs font-mono text-[#202820] focus:outline-none focus:ring-2 focus:ring-[#A8C99B] leading-relaxed resize-y"
+                />
+                <div className="flex items-center justify-between gap-3 pt-1">
+                  <p className="text-[11px] text-[#647267]">
+                    Edit this prompt to add custom rules, promotions, or special instructions.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleRetrainChatbot}
+                    disabled={isRetraining || !trainingPrompt.trim()}
+                    className="px-5 py-2.5 bg-[#254B35] text-white rounded-xl text-xs font-medium hover:bg-[#1e3d2a] transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shrink-0 shadow-xs"
+                  >
+                    {isRetraining ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Training...
+                      </>
+                    ) : (
+                      <>
+                        <Brain className="w-3.5 h-3.5" /> Retrain Chatbot
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 3: Crawled Pages List */}
+            {activeKnowledgeTab === "pages" && (
+              <div className="space-y-2 pt-1 max-h-72 overflow-y-auto">
+                {crawledPagesList.length > 0 ? (
+                  crawledPagesList.map((pg: any, idx: number) => (
+                    <div
+                      key={idx}
+                      className="p-3 rounded-xl border border-[#E5F0E1] bg-[#F8FAF9] flex items-center justify-between gap-3 text-xs"
+                    >
+                      <div className="min-w-0">
+                        <p className="font-semibold text-[#202820] truncate">
+                          {pg.title || `Page ${idx + 1}`}
+                        </p>
+                        <p className="text-[11px] text-[#647267] truncate font-mono">
+                          {pg.url}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-[10px] text-[#647267] bg-white px-2 py-0.5 rounded border border-[#E5F0E1]">
+                          {pg.cleanText?.length || pg.charCount || 0} chars
+                        </span>
+                        <span className="text-[10px] text-[#254B35] bg-[#E5F0E1] px-2 py-0.5 rounded font-medium">
+                          Indexed
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-xs text-[#647267] text-center py-6">
+                    No pages crawled yet. Enter website URL and click Fetch.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* TAB 4: Add Custom Knowledge */}
+            {activeKnowledgeTab === "custom" && (
+              <form onSubmit={handleAddCustomKnowledge} className="space-y-3 pt-1">
+                <div>
+                  <label className="text-xs font-medium text-[#647267] block mb-1">
+                    Knowledge Document Title
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={customDocTitle}
+                    onChange={(e) => setCustomDocTitle(e.target.value)}
+                    placeholder="e.g. Return &amp; Exchange Policy 2026, Holiday Sale Offer"
+                    className="w-full bg-[#F1F7EF] border border-[#E5F0E1] rounded-xl px-3.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#A8C99B]"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-[#647267] block mb-1">
+                    Content / Instructions
+                  </label>
+                  <textarea
+                    rows={4}
+                    required
+                    value={customDocContent}
+                    onChange={(e) => setCustomDocContent(e.target.value)}
+                    placeholder="Paste policies, product details, warranty terms, or custom facts here..."
+                    className="w-full bg-[#F1F7EF] border border-[#E5F0E1] rounded-xl p-3 text-xs focus:outline-none focus:ring-2 focus:ring-[#A8C99B] resize-none"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={isAddingDoc}
+                  className="px-4 py-2 bg-[#254B35] text-white rounded-xl text-xs font-medium hover:bg-[#1e3d2a] transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  {isAddingDoc ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" /> Adding...
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-3.5 h-3.5" /> Add to Chatbot Knowledge Base
+                    </>
+                  )}
+                </button>
+              </form>
+            )}
           </div>
+
 
           {/* 3. Visual Brand & Styling Inspector */}
           <div className="bg-white rounded-3xl border border-[#E5F0E1] p-6 shadow-sm space-y-5">
@@ -1324,7 +1493,7 @@ export default function ChatbotSettingsPage() {
                 </div>
                 <div>
                   <h4 className="font-semibold text-sm">
-                    {botName || "Support Assistant"}
+                    {cleanHtmlEntities(botName) || "Support Assistant"}
                   </h4>
                   <p className="text-[11px] opacity-90 flex items-center gap-1.5">
                     <span
@@ -1456,7 +1625,6 @@ export default function ChatbotSettingsPage() {
                       ]);
                       setPreviewContactMessage("");
                       setPreviewContactSubject("");
-                      await loadInquiries(websiteId);
                     } finally {
                       setPreviewContactSending(false);
                     }
@@ -1464,7 +1632,7 @@ export default function ChatbotSettingsPage() {
                   className="flex-1 p-4 overflow-y-auto space-y-3 text-xs"
                 >
                   <p className="text-[#647267] text-[11px] leading-relaxed">
-                    Have a custom question or request? Submit your query and it will be delivered directly to {botName || "our team"} for a swift response.
+                    Have a custom question or request? Submit your query and it will be delivered directly to {cleanHtmlEntities(botName) || "our team"} for a swift response.
                   </p>
 
                   <div className="space-y-1">

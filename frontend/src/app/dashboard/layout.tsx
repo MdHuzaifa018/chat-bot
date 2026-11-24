@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Bot, Sliders, Code2, User, LogOut, Menu, X } from "lucide-react";
+import { Bot, Sliders, Code2, User, LogOut, Menu, X, MessageSquare } from "lucide-react";
 import { fetchCurrentAccount, signOut } from "@/api/saasApi";
 import { LogoutConfirmModal } from "@/components/LogoutConfirmModal";
 import ProfileModal from "@/components/ProfileModal";
@@ -48,6 +48,7 @@ export default function DashboardLayout({
 
   const navItems = [
     { href: "/dashboard", label: "Chatbot Settings", icon: Sliders },
+    { href: "/dashboard/inquiries", label: "Customer Queries", icon: MessageSquare },
     { href: "/dashboard/setup-code", label: "Setup Code", icon: Code2 },
     { href: "/dashboard/profile", label: "Profile Settings", icon: User },
   ];

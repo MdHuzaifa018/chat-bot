@@ -32,6 +32,13 @@ export class ThemeDetectorService {
   static cleanBrandName(raw: string): string {
     if (!raw) return "";
     let cleaned = raw.trim();
+    // Decode HTML entities (e.g. &amp; -> &, &quot; -> ", etc.)
+    cleaned = cleaned
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'");
     // Fix specific known brand typo from user video
     cleaned = cleaned.replace(/zhilmil/gi, "Jhilmil");
     // Fix consecutive uppercase at beginning of word like ZHilmil -> Zhilmil
