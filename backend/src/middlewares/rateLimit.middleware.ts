@@ -19,58 +19,57 @@ function getClientIp(req: AuthenticatedRequest): string {
 }
 
 const inMemoryBuckets = new Map<string, { count: number; resetAt: number }>();
+let rpcRateLimitAvailable = true;
 
 async function consumeBucket(bucketKey: string): Promise<RateLimitResult> {
   const { rateLimitMaxRequests, rateLimitWindowSeconds } = env.security;
 
-  try {
-    const result = await supabaseRequest<RateLimitResult[]>("rpc/consume_chat_rate_limit", {
-      method: "POST",
-      body: {
-        p_bucket_key: bucketKey,
-        p_max_requests: rateLimitMaxRequests,
-        p_window_seconds: rateLimitWindowSeconds,
-      },
-    });
+  if (rpcRateLimitAvailable) {
+    try {
+      const result = await supabaseRequest<RateLimitResult[]>("rpc/consume_chat_rate_limit", {
+        method: "POST",
+        body: {
+          p_bucket_key: bucketKey,
+          p_max_requests: rateLimitMaxRequests,
+          p_window_seconds: rateLimitWindowSeconds,
+        },
+      });
 
-    if (Array.isArray(result) && result[0]) {
-      return result[0];
+      if (Array.isArray(result) && result[0]) {
+        return result[0];
+      }
+    } catch {
+      // Graceful in-memory rate limiter fallback if RPC is not deployed in Supabase
+      rpcRateLimitAvailable = false;
     }
-  } catch (err) {
-    // Graceful in-memory rate limiter fallback if RPC is not deployed in Supabase
-    const now = Date.now();
-    const windowMs = rateLimitWindowSeconds * 1000;
-    const bucket = inMemoryBuckets.get(bucketKey);
+  }
 
-    if (!bucket || now > bucket.resetAt) {
-      inMemoryBuckets.set(bucketKey, { count: 1, resetAt: now + windowMs });
-      return {
-        allowed: true,
-        remaining: rateLimitMaxRequests - 1,
-        reset_at: new Date(now + windowMs).toISOString(),
-      };
-    }
+  const now = Date.now();
+  const windowMs = rateLimitWindowSeconds * 1000;
+  const bucket = inMemoryBuckets.get(bucketKey);
 
-    if (bucket.count >= rateLimitMaxRequests) {
-      return {
-        allowed: false,
-        remaining: 0,
-        reset_at: new Date(bucket.resetAt).toISOString(),
-      };
-    }
-
-    bucket.count += 1;
+  if (!bucket || now > bucket.resetAt) {
+    inMemoryBuckets.set(bucketKey, { count: 1, resetAt: now + windowMs });
     return {
       allowed: true,
-      remaining: rateLimitMaxRequests - bucket.count,
+      remaining: rateLimitMaxRequests - 1,
+      reset_at: new Date(now + windowMs).toISOString(),
+    };
+  }
+
+  if (bucket.count >= rateLimitMaxRequests) {
+    return {
+      allowed: false,
+      remaining: 0,
       reset_at: new Date(bucket.resetAt).toISOString(),
     };
   }
 
+  bucket.count += 1;
   return {
     allowed: true,
-    remaining: rateLimitMaxRequests,
-    reset_at: new Date(Date.now() + 60000).toISOString(),
+    remaining: rateLimitMaxRequests - bucket.count,
+    reset_at: new Date(bucket.resetAt).toISOString(),
   };
 }
 

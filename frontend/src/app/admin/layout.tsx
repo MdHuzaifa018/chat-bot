@@ -37,6 +37,8 @@ export default function AdminLayout({
   const [mobileOpen, setMobileOpen] = useState(false);
   const [session, setSession] = useState<AdminSession | null>(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   useEffect(() => {
     // Allow the login page to render without checking auth
@@ -51,13 +53,24 @@ export default function AdminLayout({
     }).catch(() => router.replace("/admin/login")).finally(() => setCheckingAuth(false));
   }, [pathname, router]);
 
+  const confirmSignOut = async () => {
+    setIsLoggingOut(true);
+    try {
+      await signOut().catch(() => undefined);
+      router.replace("/admin/login");
+    } finally {
+      setIsLoggingOut(false);
+      setShowLogoutModal(false);
+    }
+  };
+
   // 1. Render login page full-screen without sidebar
   if (pathname === "/admin/login") {
     return <>{children}</>;
   }
 
   // 2. Prevent dashboard flash while redirecting unauthenticated users
-if (checkingAuth || !session) {
+  if (checkingAuth || !session) {
     return (
       <>
         <div className="fixed inset-0 z-50 bg-[#F1F7EF] flex items-center justify-center text-sm text-[#647267]">
@@ -73,35 +86,21 @@ if (checkingAuth || !session) {
       href: "/admin",
       label: "Overview & Telemetry",
       icon: LayoutDashboard,
-      visible: session.permissions.viewTelemetry || session.permissions.manageTeam,
+      visible: Boolean(session?.permissions?.viewTelemetry || session?.permissions?.manageTeam),
     },
     {
       href: "/admin/requests",
       label: "Client Requests",
       icon: Inbox,
-      visible: session.permissions.acceptRequests || session.permissions.rejectRequests,
+      visible: Boolean(session?.permissions?.acceptRequests || session?.permissions?.rejectRequests),
     },
     {
       href: "/admin/permissions",
       label: "Team Permissions",
       icon: ShieldCheck,
-      visible: session.permissions.manageTeam,
+      visible: Boolean(session?.permissions?.manageTeam),
     },
   ].filter((item) => item.visible);
-
-  const [showLogoutModal, setShowLogoutModal] = useState(false);
-  const [isLoggingOut, setIsLoggingOut] = useState(false);
-
-  const confirmSignOut = async () => {
-    setIsLoggingOut(true);
-    try {
-      await signOut().catch(() => undefined);
-      router.replace("/admin/login");
-    } finally {
-      setIsLoggingOut(false);
-      setShowLogoutModal(false);
-    }
-  };
 
   return (
     <div className="min-h-screen bg-[#F1F7EF] flex text-[#202820] font-sans">

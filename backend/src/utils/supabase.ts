@@ -251,14 +251,20 @@ export async function supabaseRequest<T>(
       // The response may not contain JSON.
     }
     const resourceName = resource.split("?")[0];
-    console.error(`[Supabase] ${options.method ?? "GET"} ${resourceName} failed (${response.status}${databaseCode ? ` ${databaseCode}` : ""}).`);
-    
-    // Fall back gracefully in development if table is missing or unauthorized
-    if (databaseCode === "PGRST205" || databaseCode === "42P01" || response.status === 401 || response.status === 403) {
-      console.warn(`[Supabase] Table/Auth issue for ${resourceName}, serving via resilient local mode.`);
+
+    // Fall back gracefully in development if table/RPC is missing or unauthorized
+    if (
+      databaseCode === "PGRST205" ||
+      databaseCode === "PGRST202" ||
+      databaseCode === "42P01" ||
+      (response.status === 404 && resource.startsWith("rpc/")) ||
+      response.status === 401 ||
+      response.status === 403
+    ) {
       return executeInMemoryPostgrest<T>(resource, options);
     }
 
+    console.error(`[Supabase] ${options.method ?? "GET"} ${resourceName} failed (${response.status}${databaseCode ? ` ${databaseCode}` : ""}).`);
     throw new ApiError(503, "DATABASE_ERROR", "The database operation failed.");
   }
 
