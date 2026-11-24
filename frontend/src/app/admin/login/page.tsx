@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Bot, Mail, Lock, ArrowRight, Shield, AlertCircle, Eye, EyeOff } from "lucide-react";
+import { signInAdmin, fetchCurrentAccount } from "@/api/saasApi";
 
 export default function AdminLoginPage() {
   const router = useRouter();
@@ -12,7 +13,18 @@ export default function AdminLoginPage() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  // If already signed in as admin, redirect to admin dashboard
+  useEffect(() => {
+    fetchCurrentAccount()
+      .then(({ account }) => {
+        if (account?.accountType === "admin") {
+          router.replace("/admin");
+        }
+      })
+      .catch(() => {});
+  }, [router]);
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
@@ -23,26 +35,25 @@ export default function AdminLoginPage() {
 
     setIsLoading(true);
 
-    // TODO (Backend Team): Replace with POST /api/admin/auth/login
-    // Backend should return { token, user, permissions }
-    setTimeout(() => {
-      // Mocked response for frontend testing
-      const mockSession = {
-        name: email.split("@")[0],
-        email,
-        permissions: {
+    try {
+      const { account } = await signInAdmin(email.trim(), password);
+      const adminSession = {
+        name: account.name || email.split("@")[0],
+        email: account.email || email,
+        permissions: account.permissions || {
           acceptRequests: true,
           rejectRequests: true,
           viewTelemetry: true,
           manageWebsites: true,
-          manageTeam: email.includes("admin"), // Only emails with "admin" get team access in mock
+          manageTeam: true,
         },
       };
-
-      localStorage.setItem("supportai_admin_session", JSON.stringify(mockSession));
+      localStorage.setItem("supportai_admin_session", JSON.stringify(adminSession));
+      router.replace("/admin");
+    } catch (err: any) {
+      setError(err?.message || "Invalid work email or password. Please try again.");
       setIsLoading(false);
-      router.push("/admin");
-    }, 600);
+    }
   };
 
   return (
@@ -128,17 +139,6 @@ export default function AdminLoginPage() {
           >
             {isLoading ? "Signing In..." : "Sign In"}
             {!isLoading && <ArrowRight className="w-4 h-4" />}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setEmail("admin@curiousrabit.online");
-              setPassword("CuriousAdmin2026!");
-            }}
-            className="w-full text-center text-xs text-[#254B35] font-semibold hover:underline cursor-pointer py-1"
-          >
-            ⚡ Fill Admin Demo Credentials
           </button>
         </form>
       </div>
