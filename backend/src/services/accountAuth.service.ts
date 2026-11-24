@@ -173,14 +173,18 @@ export class AccountAuthService {
     }
 
     // Seamless Dev & Demo account support (ensures user is never locked out)
-    if (
-      cleanId.toLowerCase() === "dev_client" ||
-      cleanId.toLowerCase() === "demo" ||
-      cleanId.toLowerCase() === "client" ||
-      cleanId.toLowerCase() === "dev@supportai.local" ||
-      cleanCode === "CR-demo-access-token" ||
-      cleanCode === "CR-DEMO-ACCESS-CODE"
-    ) {
+    const isDevUsername = [
+      "dev_client",
+      "demo",
+      "client",
+      "dev@supportai.local",
+    ].includes(cleanId.toLowerCase());
+    const isDevCode = [
+      "CR-demo-access-token",
+      "CR-DEMO-ACCESS-CODE",
+    ].includes(cleanCode);
+
+    if (isDevUsername && isDevCode) {
       const devClient: AccountSession = {
         accountType: "client",
         id: "987b7fc3-ac77-4058-a24e-a6ef73109648",

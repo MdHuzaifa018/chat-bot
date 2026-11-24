@@ -27,6 +27,43 @@ function clearSessionCookie(res: Response): void {
   });
 }
 
+export async function unifiedLogin(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const username = typeof req.body?.username === "string" ? req.body.username.trim() : "";
+    const email = typeof req.body?.email === "string" ? req.body.email.trim() : "";
+    const accessCode = typeof req.body?.accessCode === "string" ? req.body.accessCode.trim() : "";
+    const password = typeof req.body?.password === "string" ? req.body.password : "";
+
+    // If access code or explicit username without password is provided, attempt client login
+    if (accessCode || (username && !password)) {
+      const targetUser = username || email;
+      if (!targetUser || accessCode.length < 8) {
+        throw new ApiError(400, "INVALID_CREDENTIALS", "Enter your username/email and access code.");
+      }
+      const { account, token } = await AccountAuthService.loginClient(targetUser, accessCode);
+      setSessionCookie(res, token);
+      res.status(200).json({ authenticated: true, account, token });
+      return;
+    }
+
+    // Otherwise, attempt admin login
+    if (password || email) {
+      const targetEmail = email || username;
+      if (!targetEmail || !password) {
+        throw new ApiError(400, "INVALID_CREDENTIALS", "Enter your administrator email and password.");
+      }
+      const { account, token } = await AccountAuthService.loginAdmin(targetEmail, password);
+      setSessionCookie(res, token);
+      res.status(200).json({ authenticated: true, account, token });
+      return;
+    }
+
+    throw new ApiError(400, "INVALID_CREDENTIALS", "Provide valid login credentials.");
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function clientLogin(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const username = typeof req.body?.username === "string" ? req.body.username.trim() : "";

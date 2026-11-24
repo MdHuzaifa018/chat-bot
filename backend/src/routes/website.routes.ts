@@ -7,6 +7,7 @@ export const websiteRouter = Router();
 // Website CRUD & Management
 websiteRouter.use(requireClientAuth);
 websiteRouter.post("/", WebsiteController.createWebsite);
+websiteRouter.post("/crawl", WebsiteController.createWebsite);
 websiteRouter.get("/", WebsiteController.listWebsites);
 websiteRouter.get("/:id", WebsiteController.getWebsiteDetails);
 websiteRouter.patch("/:id/chatbot", WebsiteController.updateChatbotConfig);

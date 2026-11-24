@@ -19,7 +19,10 @@ export async function requireAuth(
   next: NextFunction
 ): Promise<void> {
   try {
-    const rawToken = req.cookies?.[SESSION_COOKIE_NAME];
+    const authHeader = req.headers.authorization;
+    const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.replace(/^Bearer\s+/, "").trim() : undefined;
+    const headerToken = typeof req.headers["x-session-token"] === "string" ? req.headers["x-session-token"].trim() : undefined;
+    const rawToken = req.cookies?.[SESSION_COOKIE_NAME] || bearerToken || headerToken;
     if (!rawToken || typeof rawToken !== "string" || rawToken.length > 128) {
       throw new ApiError(401, "SESSION_REQUIRED", "Start a chat session before sending messages.");
     }

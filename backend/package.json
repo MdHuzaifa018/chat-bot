@@ -10,7 +10,8 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "test": "tsx tests/api.test.ts"
+    "test": "tsx tests/api.test.ts && tsx tests/system_verification.test.ts && tsx tests/endpoints_validation.test.ts",
+    "test:endpoints": "tsx tests/endpoints_validation.test.ts"
   },
   "dependencies": {
     "@google/genai": "^3.6.0",

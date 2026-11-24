@@ -33,9 +33,21 @@ export class CrawlerService {
    * SSRF Protection: Ensure the target URL is a safe, publicly routable HTTP/HTTPS address.
    */
   static validateSafeUrl(rawUrl: string): URL {
+    const trimmed = (rawUrl || "").trim();
+    if (!trimmed) {
+      throw new ApiError(400, "INVALID_URL", "Please provide a valid website URL.");
+    }
+
+    // Check for explicit non-http/https protocol
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed)) {
+      if (!/^https?:\/\//i.test(trimmed)) {
+        throw new ApiError(400, "INVALID_PROTOCOL", "Only HTTP and HTTPS protocols are allowed.");
+      }
+    }
+
     let parsed: URL;
     try {
-      parsed = new URL(rawUrl.startsWith("http") ? rawUrl : `https://${rawUrl}`);
+      parsed = new URL(/^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`);
     } catch {
       throw new ApiError(400, "INVALID_URL", "Please provide a valid website URL.");
     }
@@ -62,6 +74,11 @@ export class CrawlerService {
 
     if (forbiddenPatterns.some((pattern) => pattern.test(host))) {
       throw new ApiError(400, "FORBIDDEN_HOST", "Internal and private network addresses cannot be crawled.");
+    }
+
+    // Must be a valid hostname with at least one dot (domain.tld) or valid public IP
+    if (!host.includes(".") || host.startsWith(".") || host.endsWith(".")) {
+      throw new ApiError(400, "INVALID_URL", "Please provide a valid website domain or URL.");
     }
 
     return parsed;
