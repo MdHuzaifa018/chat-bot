@@ -10,6 +10,21 @@ import type {
   WidgetMessage,
 } from "../types/index.js";
 
+export interface CustomerInquiry {
+  id: string;
+  website_id: string;
+  public_chatbot_id: string;
+  name: string;
+  email: string;
+  subject?: string;
+  message: string;
+  status: "new" | "pending" | "resolved";
+  created_at: string;
+}
+
+// In-memory inquiries cache for instantaneous retrieval & local resilience
+const inquiriesCache: CustomerInquiry[] = [];
+
 export class WidgetService {
   private static assertOriginAllowed(allowedOrigins: string[], origin?: string): void {
     if (!origin) return;
@@ -394,6 +409,20 @@ export class WidgetService {
       console.warn("[WidgetService] Failed to persist inquiry:", saveErr);
     }
 
+    // Store in live inquiries cache for immediate client dashboard reception
+    const newInquiry: CustomerInquiry = {
+      id: `inq_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      website_id: config.website_id,
+      public_chatbot_id: publicChatbotId,
+      name,
+      email,
+      subject: subject || "Custom Question",
+      message,
+      status: "new",
+      created_at: new Date().toISOString(),
+    };
+    inquiriesCache.unshift(newInquiry);
+
     console.log(
       `[WidgetService] 📧 Fallback Contact Inquiry for "${siteName}": From ${name} <${email}> (${subject || "General Inquiry"})`
     );
@@ -402,6 +431,60 @@ export class WidgetService {
       success: true,
       message: "Thank you! Your message has been sent to our team. We'll get back to you shortly.",
       recipientBot: siteName,
+      inquiry: newInquiry,
     };
+  }
+
+  /**
+   * Retrieve all inquiries submitted to this website
+   */
+  static async getInquiriesForWebsite(websiteId: string): Promise<CustomerInquiry[]> {
+    const list = [...inquiriesCache.filter((inq) => inq.website_id === websiteId)];
+
+    // Also look up persisted widget_messages from Supabase
+    try {
+      const convos = await supabaseRequest<WidgetConversation[]>(
+        `widget_conversations?website_id=eq.${encodeURIComponent(websiteId)}&order=created_at.desc&limit=50`
+      );
+      if (convos && convos.length > 0) {
+        const convoIds = convos.map((c) => c.id);
+        const msgs = await supabaseRequest<WidgetMessage[]>(
+          `widget_messages?conversation_id=in.(${convoIds.map((id) => encodeURIComponent(id)).join(",")})&role=eq.user&limit=100`
+        );
+        for (const msg of msgs || []) {
+          const match = msg.content.match(/^\[CONTACT INQUIRY from (.*?) <(.*?)>(?: \| Subject: (.*?))?\]\n\n([\s\S]*)$/);
+          if (match) {
+            const foundId = `msg_${msg.id}`;
+            if (!list.some((m) => m.id === foundId || (m.name === match[1] && m.email === match[2] && m.message === match[4]))) {
+              list.push({
+                id: foundId,
+                website_id: websiteId,
+                public_chatbot_id: "",
+                name: match[1],
+                email: match[2],
+                subject: match[3] || "Custom Question",
+                message: match[4],
+                status: "new",
+                created_at: msg.created_at,
+              });
+            }
+          }
+        }
+      }
+    } catch {}
+
+    return list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  }
+
+  /**
+   * Delete an inquiry from website
+   */
+  static deleteInquiry(websiteId: string, inquiryId: string): boolean {
+    const idx = inquiriesCache.findIndex((inq) => inq.website_id === websiteId && inq.id === inquiryId);
+    if (idx !== -1) {
+      inquiriesCache.splice(idx, 1);
+      return true;
+    }
+    return false;
   }
 }

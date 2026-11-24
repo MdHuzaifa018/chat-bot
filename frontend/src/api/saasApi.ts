@@ -180,6 +180,23 @@ export async function recrawlWebsite(websiteId: string) {
 export async function addKnowledgeDoc(websiteId: string, title: string, content: string, sourceType: "manual_doc" | "faq" = "manual_doc") {
   return (await apiRequest<{ data: any }>(`/websites/${encodeURIComponent(websiteId)}/knowledge`, { method: "POST", body: JSON.stringify({ title, content, sourceType }) })).data;
 }
+export interface CustomerInquiryItem {
+  id: string;
+  website_id: string;
+  public_chatbot_id?: string;
+  name: string;
+  email: string;
+  subject?: string;
+  message: string;
+  status: "new" | "pending" | "resolved";
+  created_at: string;
+}
+export async function fetchWebsiteInquiries(websiteId: string): Promise<CustomerInquiryItem[]> {
+  return (await apiRequest<{ data: CustomerInquiryItem[] }>(`/websites/${encodeURIComponent(websiteId)}/inquiries`)).data || [];
+}
+export async function deleteWebsiteInquiry(websiteId: string, inquiryId: string) {
+  return (await apiRequest<{ data: any }>(`/websites/${encodeURIComponent(websiteId)}/inquiries/${encodeURIComponent(inquiryId)}`, { method: "DELETE" })).data;
+}
 export async function fetchAdminOverview() { return (await apiRequest<{ data: any }>("/admin/overview")).data; }
 export async function fetchAdminRequests() { return (await apiRequest<{ data: any[] }>("/admin/requests")).data; }
 export async function reviewRequest(id: string, decision: "approve" | "reject") {

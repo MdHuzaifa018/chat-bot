@@ -418,6 +418,29 @@
       text-decoration: underline;
     }
 
+    .custom-query-trigger-btn {
+      width: 100%;
+      background: var(--primary-color, #0F172A);
+      color: #FFFFFF;
+      border: none;
+      border-radius: 20px;
+      padding: 10px 14px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: opacity 0.15s ease, transform 0.15s ease;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+    }
+
+    .custom-query-trigger-btn:hover {
+      opacity: 0.92;
+      transform: translateY(-1px);
+    }
+
     .contact-prompt-bar {
       margin-top: 10px;
       padding: 8px 12px;
@@ -600,15 +623,14 @@
       </div>
 
       <div class="footer">
-        <form class="input-form" id="chat-form">
-          <input type="text" class="chat-input" id="chat-input" placeholder="Type your message..." autocomplete="off" />
-          <button type="submit" class="send-btn" id="send-btn" aria-label="Send Message">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="22" y1="2" x2="11" y2="13"></line>
-              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-            </svg>
-          </button>
-        </form>
+        <button type="button" class="custom-query-trigger-btn" id="custom-query-trigger-btn">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+          Ask Custom Question / Submit Query
+        </button>
         <div class="branding">Powered by <a href="/" target="_blank" rel="noopener">SupportAI</a></div>
       </div>
 
@@ -663,6 +685,14 @@
   const botTitle = shadow.getElementById("bot-title");
   const botAvatar = shadow.getElementById("bot-avatar");
 
+  const customQueryTriggerBtn = shadow.getElementById("custom-query-trigger-btn");
+  if (customQueryTriggerBtn) {
+    customQueryTriggerBtn.addEventListener("click", () => {
+      contactDrawer.classList.add("open");
+      contactNameInput.focus();
+    });
+  }
+
   // Contact drawer handles
   const contactDrawer = shadow.getElementById("contact-drawer");
   const contactDrawerClose = shadow.getElementById("contact-drawer-close");
@@ -686,7 +716,7 @@
       chatWindow.classList.add("open");
       iconOpen.style.display = "none";
       iconClose.style.display = "block";
-      chatInput.focus();
+      if (chatInput) chatInput.focus();
     } else {
       chatWindow.classList.remove("open");
       iconOpen.style.display = "block";
@@ -852,9 +882,24 @@
           const btn = document.createElement("button");
           btn.className = "pill-btn";
           btn.textContent = q;
-          btn.addEventListener("click", () => {
-            chatInput.value = q;
-            chatForm.dispatchEvent(new Event("submit", { cancelable: true }));
+          btn.addEventListener("click", async () => {
+            appendMessage("user", q);
+            showTyping();
+            try {
+              if (!conversationId || !sessionToken) await initSession();
+              const res = await fetch(`${apiBase}/api/widget/${publicChatbotId}/message`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ message: q, conversationId, sessionToken }),
+              });
+              hideTyping();
+              if (!res.ok) throw new Error("Server error");
+              const { data } = await res.json();
+              appendMessage("assistant", data.answer, data.sources);
+            } catch {
+              hideTyping();
+              appendMessage("assistant", "I am having trouble answering right now. Please click 'Ask Custom Question' below to send your query directly to our team.");
+            }
           });
           section.appendChild(btn);
         });
@@ -888,44 +933,46 @@
   }
 
   // Send message
-  chatForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const text = chatInput.value.trim();
-    if (!text) return;
+  if (chatForm) {
+    chatForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const text = chatInput ? chatInput.value.trim() : "";
+      if (!text) return;
 
-    chatInput.value = "";
-    appendMessage("user", text);
-    showTyping();
+      if (chatInput) chatInput.value = "";
+      appendMessage("user", text);
+      showTyping();
 
-    try {
-      if (!conversationId || !sessionToken) await initSession();
-      if (!conversationId || !sessionToken) throw new Error("Could not start a chat session.");
-      const res = await fetch(`${apiBase}/api/widget/${publicChatbotId}/message`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: text,
-          conversationId,
-          sessionToken,
-        }),
-      });
+      try {
+        if (!conversationId || !sessionToken) await initSession();
+        if (!conversationId || !sessionToken) throw new Error("Could not start a chat session.");
+        const res = await fetch(`${apiBase}/api/widget/${publicChatbotId}/message`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: text,
+            conversationId,
+            sessionToken,
+          }),
+        });
 
-      hideTyping();
+        hideTyping();
 
-      if (!res.ok) {
-        throw new Error("Server error");
+        if (!res.ok) {
+          throw new Error("Server error");
+        }
+
+        const { data } = await res.json();
+        appendMessage("assistant", data.answer, data.sources);
+      } catch {
+        hideTyping();
+        appendMessage(
+          "assistant",
+          "I am currently having trouble connecting to the server. Please try again or reach out to support."
+        );
       }
-
-      const { data } = await res.json();
-      appendMessage("assistant", data.answer, data.sources);
-    } catch {
-      hideTyping();
-      appendMessage(
-        "assistant",
-        "I am currently having trouble connecting to the server. Please try again or reach out to support."
-      );
-    }
-  });
+    });
+  }
 
   // Init
   loadConfig();

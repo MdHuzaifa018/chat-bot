@@ -91,4 +91,24 @@ export class WebsiteController {
       next(error);
     }
   }
+
+  static async getWebsiteInquiries(req: AccountAuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const account = requireClient(req);
+      const inquiries = await WebsiteService.getWebsiteInquiries(String(req.params.id), account.id);
+      res.status(200).json({ data: inquiries });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async deleteWebsiteInquiry(req: AccountAuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const account = requireClient(req);
+      const result = await WebsiteService.deleteWebsiteInquiry(String(req.params.id), String(req.params.inquiryId), account.id);
+      res.status(200).json({ data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
 }

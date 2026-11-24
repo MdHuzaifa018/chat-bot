@@ -47,7 +47,7 @@ export default function SetupCodePage() {
         if (typeof window !== "undefined") {
           try {
             sessionStorage.setItem("supportai_active_site_id", siteId);
-          } catch {}
+          } catch { }
         }
       }
     } catch (err) {
@@ -301,11 +301,10 @@ export default function SetupCodePage() {
               onClick={() =>
                 setActiveTab(tab.id as "html" | "nextjs" | "cms")
               }
-              className={`px-4 py-2 rounded-full text-xs font-medium transition-colors cursor-pointer ${
-                activeTab === tab.id
-                  ? "bg-[#254B35] text-white"
-                  : "bg-[#F1F7EF] text-[#647267] hover:text-[#254B35]"
-              }`}
+              className={`px-4 py-2 rounded-full text-xs font-medium transition-colors cursor-pointer ${activeTab === tab.id
+                ? "bg-[#254B35] text-white"
+                : "bg-[#F1F7EF] text-[#647267] hover:text-[#254B35]"
+                }`}
             >
               {tab.label}
             </button>

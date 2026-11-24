@@ -14,3 +14,5 @@ websiteRouter.patch("/:id/chatbot", WebsiteController.updateChatbotConfig);
 websiteRouter.put("/:id/questions", WebsiteController.updateQuestions);
 websiteRouter.post("/:id/knowledge", WebsiteController.addKnowledgeDoc);
 websiteRouter.post("/:id/recrawl", WebsiteController.recrawlWebsite);
+websiteRouter.get("/:id/inquiries", WebsiteController.getWebsiteInquiries);
+websiteRouter.delete("/:id/inquiries/:inquiryId", WebsiteController.deleteWebsiteInquiry);

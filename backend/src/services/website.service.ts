@@ -3,6 +3,7 @@ import { ApiError } from "../utils/apiError.js";
 import { CrawlerService, type ExtractedAtoZKnowledge, type CrawlResult } from "./crawler.service.js";
 import { ThemeDetectorService, type DetectedTheme } from "./themeDetector.service.js";
 import { GeminiService } from "./gemini.service.js";
+import { WidgetService } from "./widget.service.js";
 import { randomBytes } from "node:crypto";
 import { env } from "../config/env.js";
 import type {
@@ -575,6 +576,22 @@ export class WebsiteService {
     });
 
     return pages.length;
+  }
+
+  /**
+   * Retrieve inquiries received from website chatbot
+   */
+  static async getWebsiteInquiries(websiteId: string, clientAccountId: string) {
+    await this.getOwnedWebsite(websiteId, clientAccountId);
+    return await WidgetService.getInquiriesForWebsite(websiteId);
+  }
+
+  /**
+   * Delete an inquiry from website
+   */
+  static async deleteWebsiteInquiry(websiteId: string, inquiryId: string, clientAccountId: string) {
+    await this.getOwnedWebsite(websiteId, clientAccountId);
+    return WidgetService.deleteInquiry(websiteId, inquiryId);
   }
 
   private static async getOwnedWebsite(websiteId: string, _clientAccountId?: string): Promise<Website> {
