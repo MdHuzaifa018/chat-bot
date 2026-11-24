@@ -19,6 +19,7 @@ export interface ChatbotConfigData {
   primary_color: string; secondary_color: string; background_color: string;
   text_color: string; font_family: string; logo_url?: string;
   position: "bottom-right" | "bottom-left"; allowed_origins: string[]; is_published: boolean;
+  system_prompt_override?: string;
 }
 
 export const API_BASE = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api").replace(/\/$/, "");
