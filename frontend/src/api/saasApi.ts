@@ -43,20 +43,32 @@ function deleteCookie(name: string): void {
 }
 
 export function getStoredAuthToken(): string | null {
-  return getCookie("supportai_token");
+  const cookieToken = getCookie("supportai_token") || getCookie("supportai_session");
+  if (cookieToken) return cookieToken;
+  if (typeof window !== "undefined") {
+    try {
+      return localStorage.getItem("supportai_token") || localStorage.getItem("supportai_session");
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 export function setStoredAuthToken(token?: string | null): void {
   if (typeof window === "undefined") return;
-  // Completely purge legacy localStorage storage to ensure cookies are used
-  try {
-    localStorage.removeItem("supportai_token");
-  } catch {}
-
   if (token) {
     setCookie("supportai_token", token, 7);
+    try {
+      localStorage.setItem("supportai_token", token);
+    } catch {}
   } else {
     deleteCookie("supportai_token");
+    deleteCookie("supportai_session");
+    try {
+      localStorage.removeItem("supportai_token");
+      localStorage.removeItem("supportai_session");
+    } catch {}
   }
 }
 
