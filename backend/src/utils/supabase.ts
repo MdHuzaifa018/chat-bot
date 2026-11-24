@@ -98,6 +98,20 @@ function executeInMemoryPostgrest<T>(
         orderDesc = direction?.toLowerCase() === "desc";
       } else if (key === "select") {
         // Ignored in filter, handled at projection
+      } else if (key === "or") {
+        const clauses = val.replace(/^\(|\)$/g, "").split(",");
+        const subChecks: Array<(item: any) => boolean> = [];
+        for (const clause of clauses) {
+          const eqIdx = clause.indexOf(".eq.");
+          if (eqIdx !== -1) {
+            const prop = clause.slice(0, eqIdx);
+            const targetVal = decodeURIComponent(clause.slice(eqIdx + 4));
+            subChecks.push((item) => String(item[prop] ?? "").toLowerCase() === targetVal.toLowerCase());
+          }
+        }
+        if (subChecks.length > 0) {
+          filters.push((item) => subChecks.some((fn) => fn(item)));
+        }
       } else if (val.startsWith("eq.")) {
         const target = val.slice(3);
         filters.push((item) => {

@@ -11,35 +11,33 @@ import {
   AlertTriangle,
   ArrowLeft,
 } from "lucide-react";
-import { fetchWebsites, fetchWebsiteDetails, API_ORIGIN } from "@/api/saasApi";
 
 export default function SetupCodePage() {
   const [copied, setCopied] = useState(false);
   const [activeTab, setActiveTab] = useState<"html" | "nextjs" | "cms">("html");
   const [botName, setBotName] = useState("Support Assistant");
   const [isConfigured, setIsConfigured] = useState(false);
-  const [botId, setBotId] = useState("");
+  const [botId, setBotId] = useState("bot_demo12345678");
 
   useEffect(() => {
-    const localBotId = localStorage.getItem("supportai_public_chatbot_id");
-    if (localBotId) {
-      setBotId(localBotId);
-      setIsConfigured(true);
-    }
+    const raw = localStorage.getItem("supportai_config");
+    const storedBotId = localStorage.getItem("supportai_public_chatbot_id");
+    if (storedBotId) setBotId(storedBotId);
 
-    fetchWebsites().then(async sites => {
-      if (!sites.length) return;
-      const details = await fetchWebsiteDetails(sites[0].id);
-      setBotName(details.chatbotConfig?.chatbot_name || sites[0].name);
-      setBotId(details.chatbotConfig?.public_chatbot_id || localBotId || "");
-      setIsConfigured(Boolean(details.chatbotConfig?.public_chatbot_id || localBotId));
-    }).catch(() => {
-      if (!localBotId) setIsConfigured(false);
-    });
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed.botName) setBotName(parsed.botName);
+        if (parsed.publicChatbotId) setBotId(parsed.publicChatbotId);
+        setIsConfigured(true);
+      } catch {
+        setIsConfigured(false);
+      }
+    }
   }, []);
 
   const embedScript = `<script
-  src="${API_ORIGIN}/widget.js"
+  src="http://localhost:5000/widget.js"
   data-chatbot-id="${botId}"
   async
 ></script>`;
@@ -66,7 +64,7 @@ export default function SetupCodePage() {
 
         <div className="flex items-center gap-2.5">
           <Link
-            href={`/demo-embed.html?bot=${encodeURIComponent(botId)}&api=${encodeURIComponent(API_ORIGIN)}`}
+            href={`/demo-embed.html?bot=${botId}`}
             target="_blank"
             className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-[#254B35] text-white rounded-full text-xs font-semibold hover:bg-[#1e3d2a] transition-all shadow-sm"
           >

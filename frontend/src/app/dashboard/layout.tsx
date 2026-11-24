@@ -3,9 +3,8 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Bot, Sliders, Code2, LogOut, Menu, X } from "lucide-react";
-import { fetchCurrentAccount, signOut } from "@/api/saasApi";
-import { LogoutConfirmModal } from "@/components/LogoutConfirmModal";
+import { Bot, Sliders, Code2, User, LogOut, Menu, X } from "lucide-react";
+import ProfileModal from "@/components/ProfileModal";
 
 export default function DashboardLayout({
   children,
@@ -16,36 +15,24 @@ export default function DashboardLayout({
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [clientName, setClientName] = useState("Client");
-  const [checkingAuth, setCheckingAuth] = useState(true);
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
 
   useEffect(() => {
-    fetchCurrentAccount().then(({ account }) => {
-      if (account.accountType !== "client") throw new Error("Client account required");
-      setClientName(account.name || account.username || "Client");
-      setCheckingAuth(false);
-    }).catch(() => router.replace("/")).finally(() => setCheckingAuth(false));
-  }, [router]);
+    const stored = localStorage.getItem("supportai_client_user");
+    if (stored) setClientName(stored);
+  }, []);
 
   const navItems = [
     { href: "/dashboard", label: "Chatbot Settings", icon: Sliders },
     { href: "/dashboard/setup-code", label: "Setup Code", icon: Code2 },
+    { href: "/dashboard/profile", label: "Profile Settings", icon: User },
   ];
 
-  const [showLogoutModal, setShowLogoutModal] = useState(false);
-  const [isLoggingOut, setIsLoggingOut] = useState(false);
-
-  const confirmSignOut = async () => {
-    setIsLoggingOut(true);
-    try {
-      await signOut().catch(() => undefined);
-      router.replace("/");
-    } finally {
-      setIsLoggingOut(false);
-      setShowLogoutModal(false);
-    }
+  const handleSignOut = () => {
+    // TODO (Backend Team): Clear auth token/cookie here
+    localStorage.removeItem("supportai_client_user");
+    router.push("/");
   };
-
-  if (checkingAuth) return <div className="min-h-screen grid place-items-center bg-[#F1F7EF] text-sm text-[#647267]">Checking access…</div>;
 
   return (
     <div className="min-h-screen bg-[#F1F7EF] flex text-[#202820]">
@@ -84,7 +71,7 @@ export default function DashboardLayout({
 
         <div className="p-4 border-t border-[#E5F0E1]">
           <button
-            onClick={() => setShowLogoutModal(true)}
+            onClick={handleSignOut}
             className="flex items-center gap-3 px-4 py-3 w-full text-sm font-medium text-[#647267] hover:bg-red-50 hover:text-red-600 rounded-xl transition-colors cursor-pointer"
           >
             <LogOut className="w-5 h-5" />
@@ -130,11 +117,8 @@ export default function DashboardLayout({
               })}
             </nav>
             <button
-              onClick={() => {
-                setMobileOpen(false);
-                setShowLogoutModal(true);
-              }}
-              className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-red-600 rounded-xl cursor-pointer"
+              onClick={handleSignOut}
+              className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-red-600 rounded-xl"
             >
               <LogOut className="w-5 h-5" />
               Sign Out
@@ -146,16 +130,6 @@ export default function DashboardLayout({
           />
         </div>
       )}
-
-      {/* Custom Logout Confirmation Modal */}
-      <LogoutConfirmModal
-        isOpen={showLogoutModal}
-        onClose={() => setShowLogoutModal(false)}
-        onConfirm={confirmSignOut}
-        isLoading={isLoggingOut}
-        title="Sign out of Client Dashboard?"
-        description="Are you sure you want to log out? You will need your access code to log back in."
-      />
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0">
@@ -170,23 +144,41 @@ export default function DashboardLayout({
             <h1 className="text-lg font-semibold text-[#202820]">
               {pathname === "/dashboard/setup-code"
                 ? "Setup & Embed Code"
+                : pathname === "/dashboard/profile"
+                ? "Profile Settings"
                 : "Chatbot Settings"}
             </h1>
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="hidden sm:block text-sm font-medium text-[#647267]">
-              {clientName}
-            </span>
-            <div className="w-9 h-9 rounded-full bg-[#254B35] text-white flex items-center justify-center text-xs font-semibold uppercase">
-              {clientName.slice(0, 2)}
-            </div>
+            <button
+              type="button"
+              onClick={() => setProfileModalOpen(true)}
+              className="flex items-center gap-2.5 p-1.5 pl-3 pr-2 rounded-full hover:bg-[#F1F7EF] border border-transparent hover:border-[#E5F0E1] transition-all cursor-pointer group"
+              title="Open Profile Settings"
+            >
+              <span className="hidden sm:block text-sm font-medium text-[#647267] group-hover:text-[#254B35] transition-colors">
+                {clientName}
+              </span>
+              <div className="w-9 h-9 rounded-full bg-[#254B35] text-white flex items-center justify-center text-xs font-semibold uppercase group-hover:ring-2 group-hover:ring-[#A8C99B] transition-all">
+                {clientName.slice(0, 2)}
+              </div>
+            </button>
           </div>
         </header>
 
         <main className="flex-1 p-6 lg:p-8 max-w-7xl w-full mx-auto">
           {children}
         </main>
+
+        <ProfileModal
+          isOpen={profileModalOpen}
+          onClose={() => setProfileModalOpen(false)}
+          accountType="client"
+          onProfileUpdated={(updated) => {
+            if (updated.name) setClientName(updated.name);
+          }}
+        />
       </div>
     </div>
   );

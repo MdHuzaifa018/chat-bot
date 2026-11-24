@@ -31,6 +31,7 @@ export async function attachAccount(
 
         // 2. Supabase JWT token verification
         try {
+          // @ts-ignore
           const { createClient } = await import("@supabase/supabase-js");
           const { env } = await import("../config/env.js");
           const client = createClient(env.supabase.url, env.supabase.serviceRoleKey);

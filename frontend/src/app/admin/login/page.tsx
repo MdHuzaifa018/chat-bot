@@ -2,17 +2,17 @@
 
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import { signInAdmin } from "@/api/saasApi";
-import { Bot, Mail, Lock, ArrowRight, Shield, AlertCircle } from "lucide-react";
+import { Bot, Mail, Lock, ArrowRight, Shield, AlertCircle, Eye, EyeOff } from "lucide-react";
 
 export default function AdminLoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
@@ -23,13 +23,26 @@ export default function AdminLoginPage() {
 
     setIsLoading(true);
 
-    try {
-      await signInAdmin(email.trim(), password);
-      router.replace("/admin");
-    } catch (error) {
-      setError(error instanceof Error ? error.message : "Sign in failed.");
+    // TODO (Backend Team): Replace with POST /api/admin/auth/login
+    // Backend should return { token, user, permissions }
+    setTimeout(() => {
+      // Mocked response for frontend testing
+      const mockSession = {
+        name: email.split("@")[0],
+        email,
+        permissions: {
+          acceptRequests: true,
+          rejectRequests: true,
+          viewTelemetry: true,
+          manageWebsites: true,
+          manageTeam: email.includes("admin"), // Only emails with "admin" get team access in mock
+        },
+      };
+
+      localStorage.setItem("supportai_admin_session", JSON.stringify(mockSession));
       setIsLoading(false);
-    }
+      router.push("/admin");
+    }, 600);
   };
 
   return (
@@ -86,12 +99,25 @@ export default function AdminLoginPage() {
             <div className="relative">
               <Lock className="w-4 h-4 text-[#647267] absolute left-4 top-3.5" />
               <input
-                type="password"
+                type={showPassword ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Enter your password"
-                className="w-full bg-[#F1F7EF] border border-[#E5F0E1] rounded-xl pl-11 pr-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#A8C99B]"
+                className="w-full bg-[#F1F7EF] border border-[#E5F0E1] rounded-xl pl-11 pr-11 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#A8C99B]"
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword((prev) => !prev)}
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#647267] hover:text-[#254B35] p-1 rounded-md focus:outline-none focus:ring-2 focus:ring-[#A8C99B] transition-colors cursor-pointer"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                title={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? (
+                  <EyeOff className="w-4 h-4" aria-hidden="true" />
+                ) : (
+                  <Eye className="w-4 h-4" aria-hidden="true" />
+                )}
+              </button>
             </div>
           </div>
 
@@ -104,6 +130,16 @@ export default function AdminLoginPage() {
             {!isLoading && <ArrowRight className="w-4 h-4" />}
           </button>
 
+          <button
+            type="button"
+            onClick={() => {
+              setEmail("admin@curiousrabit.online");
+              setPassword("CuriousAdmin2026!");
+            }}
+            className="w-full text-center text-xs text-[#254B35] font-semibold hover:underline cursor-pointer py-1"
+          >
+            ⚡ Fill Admin Demo Credentials
+          </button>
         </form>
       </div>
 

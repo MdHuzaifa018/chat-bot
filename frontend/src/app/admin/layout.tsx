@@ -8,12 +8,12 @@ import {
   LayoutDashboard,
   Inbox,
   ShieldCheck,
+  User,
   Menu,
   X,
   LogOut,
 } from "lucide-react";
-import { fetchCurrentAccount, signOut } from "@/api/saasApi";
-import { LogoutConfirmModal } from "@/components/LogoutConfirmModal";
+import ProfileModal from "@/components/ProfileModal";
 
 interface AdminSession {
   name: string;
@@ -37,8 +37,7 @@ export default function AdminLayout({
   const [mobileOpen, setMobileOpen] = useState(false);
   const [session, setSession] = useState<AdminSession | null>(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
-  const [showLogoutModal, setShowLogoutModal] = useState(false);
-  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
 
   useEffect(() => {
     // Allow the login page to render without checking auth
@@ -47,22 +46,21 @@ export default function AdminLayout({
       return;
     }
 
-    fetchCurrentAccount().then(({ account }) => {
-      if (account.accountType !== "admin") throw new Error("Administrator account required");
-      setSession({ name: account.name, email: account.email, permissions: account.permissions as AdminSession["permissions"] });
-    }).catch(() => router.replace("/admin/login")).finally(() => setCheckingAuth(false));
-  }, [pathname, router]);
-
-  const confirmSignOut = async () => {
-    setIsLoggingOut(true);
-    try {
-      await signOut().catch(() => undefined);
+    const raw = localStorage.getItem("supportai_admin_session");
+    if (!raw) {
       router.replace("/admin/login");
-    } finally {
-      setIsLoggingOut(false);
-      setShowLogoutModal(false);
+      return;
     }
-  };
+
+    try {
+      setSession(JSON.parse(raw));
+    } catch {
+      router.replace("/admin/login");
+      return;
+    }
+
+    setCheckingAuth(false);
+  }, [pathname, router]);
 
   // 1. Render login page full-screen without sidebar
   if (pathname === "/admin/login") {
@@ -70,7 +68,7 @@ export default function AdminLayout({
   }
 
   // 2. Prevent dashboard flash while redirecting unauthenticated users
-  if (checkingAuth || !session) {
+if (checkingAuth || !session) {
     return (
       <>
         <div className="fixed inset-0 z-50 bg-[#F1F7EF] flex items-center justify-center text-sm text-[#647267]">
@@ -86,21 +84,32 @@ export default function AdminLayout({
       href: "/admin",
       label: "Overview & Telemetry",
       icon: LayoutDashboard,
-      visible: Boolean(session?.permissions?.viewTelemetry || session?.permissions?.manageTeam),
+      visible: session.permissions.viewTelemetry || session.permissions.manageTeam,
     },
     {
       href: "/admin/requests",
       label: "Client Requests",
       icon: Inbox,
-      visible: Boolean(session?.permissions?.acceptRequests || session?.permissions?.rejectRequests),
+      visible: session.permissions.acceptRequests || session.permissions.rejectRequests,
     },
     {
       href: "/admin/permissions",
       label: "Team Permissions",
       icon: ShieldCheck,
-      visible: Boolean(session?.permissions?.manageTeam),
+      visible: session.permissions.manageTeam,
+    },
+    {
+      href: "/admin/profile",
+      label: "Profile Settings",
+      icon: User,
+      visible: true,
     },
   ].filter((item) => item.visible);
+
+  const handleSignOut = () => {
+    localStorage.removeItem("supportai_admin_session");
+    router.replace("/admin/login");
+  };
 
   return (
     <div className="min-h-screen bg-[#F1F7EF] flex text-[#202820] font-sans">
@@ -144,7 +153,7 @@ export default function AdminLayout({
 
         <div className="p-4 border-t border-[#E5F0E1]">
           <button
-            onClick={() => setShowLogoutModal(true)}
+            onClick={handleSignOut}
             className="flex items-center gap-3 px-4 py-3 w-full text-sm font-medium text-[#647267] hover:bg-red-50 hover:text-red-600 rounded-xl transition-colors cursor-pointer"
           >
             <LogOut className="w-5 h-5" />
@@ -182,11 +191,8 @@ export default function AdminLayout({
               })}
             </nav>
             <button
-              onClick={() => {
-                setMobileOpen(false);
-                setShowLogoutModal(true);
-              }}
-              className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-red-600 rounded-xl cursor-pointer"
+              onClick={handleSignOut}
+              className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-red-600 rounded-xl"
             >
               <LogOut className="w-5 h-5" />
               Sign Out
@@ -195,16 +201,6 @@ export default function AdminLayout({
           <div className="flex-1 bg-black/30" onClick={() => setMobileOpen(false)} />
         </div>
       )}
-
-      {/* Custom Logout Confirmation Modal */}
-      <LogoutConfirmModal
-        isOpen={showLogoutModal}
-        onClose={() => setShowLogoutModal(false)}
-        onConfirm={confirmSignOut}
-        isLoading={isLoggingOut}
-        title="Sign out of Admin Console?"
-        description="Are you sure you want to end your administrator session? You will need your login credentials to return."
-      />
 
       {/* Main Area */}
       <div className="flex-1 flex flex-col min-w-0">
@@ -217,7 +213,9 @@ export default function AdminLayout({
               <Menu className="w-5 h-5" />
             </button>
             <h1 className="text-lg font-semibold text-[#202820]">
-              {pathname === "/admin/requests"
+              {pathname === "/admin/profile"
+                ? "Profile Settings"
+                : pathname === "/admin/requests"
                 ? "Client Requests"
                 : pathname === "/admin/permissions"
                 ? "Team & Permissions"
@@ -230,15 +228,33 @@ export default function AdminLayout({
               <span className="w-2 h-2 rounded-full bg-[#254B35] animate-pulse"></span>
               {session.permissions.manageTeam ? "Super Admin" : "Team Member"}
             </span>
-            <div className="w-9 h-9 rounded-full bg-[#254B35] text-white flex items-center justify-center text-xs font-semibold uppercase">
+            <button
+              type="button"
+              onClick={() => setProfileModalOpen(true)}
+              className="w-9 h-9 rounded-full bg-[#254B35] text-white flex items-center justify-center text-xs font-semibold uppercase hover:ring-2 hover:ring-[#A8C99B] transition-all cursor-pointer"
+              title="Open Admin Profile Settings"
+            >
               {session.name.slice(0, 2)}
-            </div>
+            </button>
           </div>
         </header>
 
         <main className="flex-1 p-6 lg:p-8 max-w-7xl w-full mx-auto">
           {children}
         </main>
+
+        <ProfileModal
+          isOpen={profileModalOpen}
+          onClose={() => setProfileModalOpen(false)}
+          accountType="admin"
+          onProfileUpdated={(updated) => {
+            if (updated.name) {
+              setSession((prev) =>
+                prev ? { ...prev, name: updated.name, email: updated.email } : prev
+              );
+            }
+          }}
+        />
       </div>
     </div>
   );

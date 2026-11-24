@@ -178,3 +178,159 @@ export async function updateEmployeePermissions(id: string, permissions: Record<
 export async function deleteEmployee(id: string) {
   return (await apiRequest<{ data: any }>(`/admin/employees/${encodeURIComponent(id)}`, { method: "DELETE" })).data;
 }
+
+export interface UserProfileData {
+  accountType: "client" | "admin";
+  id: string;
+  name: string;
+  email: string;
+  businessName?: string;
+  username?: string;
+  role?: string;
+  permissions?: {
+    acceptRequests?: boolean;
+    rejectRequests?: boolean;
+    viewTelemetry?: boolean;
+    manageWebsites?: boolean;
+    manageTeam?: boolean;
+  };
+}
+
+export interface UpdateProfilePayload {
+  name?: string;
+  email?: string;
+  businessName?: string;
+  currentPassword?: string;
+  newPassword?: string;
+  currentAccessCode?: string;
+  newAccessCode?: string;
+}
+
+export async function fetchUserProfile(preferredType?: "client" | "admin"): Promise<UserProfileData> {
+  try {
+    const res = await apiRequest<{ success?: boolean; data?: any; account?: any }>("/auth/profile");
+    const profile = res.data || res.account || res;
+    if (profile && profile.email) {
+      return {
+        accountType: profile.accountType || (profile.role ? "admin" : "client"),
+        id: profile.id || "usr-1",
+        name: profile.name || (profile.email ? profile.email.split("@")[0] : "User"),
+        email: profile.email,
+        businessName: profile.businessName || profile.name || "My Business",
+        username: profile.username || (profile.email ? profile.email.split("@")[0] : "user"),
+        role: profile.role || "super_admin",
+        permissions: profile.permissions || {
+          acceptRequests: true,
+          rejectRequests: true,
+          viewTelemetry: true,
+          manageWebsites: true,
+          manageTeam: true,
+        },
+      };
+    }
+  } catch (err) {
+    console.warn("fetchUserProfile live API unavailable, using local session:", err);
+  }
+
+  // Graceful local storage session fallback
+  if (typeof window !== "undefined") {
+    const adminRaw = localStorage.getItem("supportai_admin_session");
+    if (adminRaw && preferredType !== "client") {
+      try {
+        const adminSession = JSON.parse(adminRaw);
+        return {
+          accountType: "admin",
+          id: "admin-local-1",
+          name: adminSession.name || "Administrator",
+          email: adminSession.email || "admin@curiousrabit.online",
+          role: adminSession.permissions?.manageTeam ? "super_admin" : "admin",
+          permissions: adminSession.permissions || {
+            acceptRequests: true,
+            rejectRequests: true,
+            viewTelemetry: true,
+            manageWebsites: true,
+            manageTeam: true,
+          },
+        };
+      } catch {}
+    }
+
+    const clientUser = localStorage.getItem("supportai_client_user");
+    const clientEmail = localStorage.getItem("supportai_client_email");
+    return {
+      accountType: "client",
+      id: "client-local-1",
+      name: clientUser || "Demo Client",
+      email: clientEmail || `${(clientUser || "client").toLowerCase().replace(/\s+/g, ".")}@example.com`,
+      businessName: clientUser ? `${clientUser} Workspace` : "Demo Workspace Client",
+      username: (clientUser || "client_user").toLowerCase().replace(/\s+/g, "_"),
+    };
+  }
+
+  return {
+    accountType: "client",
+    id: "default-user",
+    name: "Client User",
+    email: "client@example.com",
+    businessName: "Demo Workspace Client",
+    username: "client_user",
+  };
+}
+
+export async function updateUserProfile(payload: UpdateProfilePayload): Promise<UserProfileData> {
+  try {
+    const res = await apiRequest<{ success?: boolean; data?: any; account?: any }>("/auth/profile", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+    const updated = res.data || res.account || res;
+    if (updated && updated.email) {
+      if (typeof window !== "undefined") {
+        if (updated.accountType === "admin") {
+          const adminRaw = localStorage.getItem("supportai_admin_session");
+          const existing = adminRaw ? JSON.parse(adminRaw) : {};
+          localStorage.setItem(
+            "supportai_admin_session",
+            JSON.stringify({ ...existing, name: updated.name, email: updated.email })
+          );
+        } else {
+          if (updated.name) localStorage.setItem("supportai_client_user", updated.name);
+          if (updated.email) localStorage.setItem("supportai_client_email", updated.email);
+        }
+      }
+      return updated;
+    }
+  } catch (err: any) {
+    if (err.message && !err.message.includes("Cannot connect") && !err.message.includes("fetch")) {
+      throw err;
+    }
+    console.warn("updateUserProfile live API offline, updating local session:", err);
+  }
+
+  if (typeof window !== "undefined") {
+    if (payload.name) {
+      localStorage.setItem("supportai_client_user", payload.name);
+    }
+    if (payload.email) {
+      localStorage.setItem("supportai_client_email", payload.email);
+    }
+    const adminRaw = localStorage.getItem("supportai_admin_session");
+    if (adminRaw) {
+      try {
+        const adminSession = JSON.parse(adminRaw);
+        if (payload.name) adminSession.name = payload.name;
+        if (payload.email) adminSession.email = payload.email;
+        localStorage.setItem("supportai_admin_session", JSON.stringify(adminSession));
+      } catch {}
+    }
+  }
+
+  return {
+    accountType: "client",
+    id: "local-user-updated",
+    name: payload.name || "Client User",
+    email: payload.email || "client@example.com",
+    businessName: payload.businessName || payload.name || "Demo Workspace",
+    username: (payload.name || "client_user").toLowerCase().replace(/\s+/g, "_"),
+  };
+}

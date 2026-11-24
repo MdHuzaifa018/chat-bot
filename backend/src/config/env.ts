@@ -18,6 +18,11 @@ export interface AppEnv {
     maxOutputTokens: number;
     isConfigured: boolean;
   };
+  clerk: {
+    isConfigured: boolean;
+    secretKey: string;
+    publishableKey: string;
+  };
   chatConfig: {
     dailyMessageLimit: number;
     maxMessageLength: number;
@@ -48,6 +53,10 @@ export function loadEnv(): AppEnv {
   // Supabase Database Configuration
   const supabaseUrlRaw = process.env.SUPABASE_URL?.trim() || "https://your-project.supabase.co";
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() || "your_service_role_key";
+
+  // Clerk Authentication Configuration
+  const clerkSecretKey = process.env.CLERK_SECRET_KEY?.trim() ?? "";
+  const clerkPublishableKey = process.env.CLERK_PUBLISHABLE_KEY?.trim() ?? "";
 
   let parsedUrl: URL;
   try {
@@ -98,6 +107,11 @@ export function loadEnv(): AppEnv {
       timeoutMs: Number.isInteger(geminiTimeoutMs) && geminiTimeoutMs >= 1000 ? geminiTimeoutMs : 20000,
       maxOutputTokens: Number.isInteger(geminiMaxOutputTokens) && geminiMaxOutputTokens > 0 ? geminiMaxOutputTokens : 450,
       isConfigured: Boolean(geminiApiKey && !geminiApiKey.includes("your_gemini_api_key") && !geminiApiKey.includes("your_google_ai_studio_api_key")),
+    },
+    clerk: {
+      isConfigured: Boolean(clerkSecretKey),
+      secretKey: clerkSecretKey,
+      publishableKey: clerkPublishableKey,
     },
     chatConfig: {
       dailyMessageLimit: Number.isInteger(dailyMessageLimit) && dailyMessageLimit > 0 ? dailyMessageLimit : 50,

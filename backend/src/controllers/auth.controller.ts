@@ -102,6 +102,32 @@ export async function currentAccount(req: AccountAuthRequest, res: Response): Pr
   res.status(200).json({ authenticated: true, account: req.account });
 }
 
+export async function getProfile(req: AccountAuthRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    if (!req.account) {
+      res.status(401).json({ error: { code: "UNAUTHORIZED", message: "Sign in to continue." } });
+      return;
+    }
+    const profile = await AccountAuthService.getProfile(req.account);
+    res.status(200).json({ authenticated: true, data: profile, profile });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function updateProfile(req: AccountAuthRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    if (!req.account) {
+      res.status(401).json({ error: { code: "UNAUTHORIZED", message: "Sign in to continue." } });
+      return;
+    }
+    const profile = await AccountAuthService.updateProfile(req.account, req.body ?? {});
+    res.status(200).json({ success: true, data: profile, profile });
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function logout(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const token = req.cookies?.[ACCOUNT_COOKIE_NAME];

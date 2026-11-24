@@ -14,7 +14,10 @@ export async function hashPassword(value: string): Promise<string> {
   return `scrypt$${salt.toString("hex")}$${derivedKey.toString("hex")}`;
 }
 
-export async function verifyPassword(value: string, encoded: string): Promise<boolean> {
+export async function verifyPassword(value: string, encoded?: string | null): Promise<boolean> {
+  if (!encoded || typeof encoded !== "string") {
+    return false;
+  }
   const [algorithm, saltHex, expectedHex] = encoded.split("$");
   if (algorithm !== "scrypt" || !saltHex || !expectedHex || !/^[a-f0-9]+$/i.test(saltHex + expectedHex)) {
     return false;
