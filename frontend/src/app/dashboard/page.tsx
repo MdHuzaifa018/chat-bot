@@ -163,7 +163,7 @@ export default function ChatbotSettingsPage() {
   const [extractedKnowledge, setExtractedKnowledge] = useState<any>(null);
   const [crawledPagesList, setCrawledPagesList] = useState<any[]>([]);
   const [activeKnowledgeTab, setActiveKnowledgeTab] = useState<
-    "overview" | "prompt" | "pages" | "custom"
+    "overview" | "pages" | "custom"
   >("overview");
   const [isRetraining, setIsRetraining] = useState(false);
   const [retrainSuccessMsg, setRetrainSuccessMsg] = useState("");
@@ -199,7 +199,7 @@ export default function ChatbotSettingsPage() {
               localStorage.setItem("supportai_public_chatbot_id", cfg.public_chatbot_id);
             }
             if (cfg.chatbot_name) setBotName(cleanHtmlEntities(cfg.chatbot_name));
-            if (cfg.welcome_message) setWelcomeMessage(cfg.welcome_message);
+            if (cfg.welcome_message) setWelcomeMessage(cleanHtmlEntities(cfg.welcome_message));
             if (cfg.primary_color) setPrimaryColor(cfg.primary_color);
             if (cfg.secondary_color) setSecondaryColor(cfg.secondary_color);
             if (cfg.background_color) setSurfaceColor(cfg.background_color);
@@ -299,7 +299,7 @@ export default function ChatbotSettingsPage() {
             const parsed = JSON.parse(raw);
             if (parsed.websiteUrl) setWebsiteUrl(parsed.websiteUrl);
             if (parsed.botName) setBotName(cleanHtmlEntities(parsed.botName));
-            if (parsed.welcomeMessage) setWelcomeMessage(parsed.welcomeMessage);
+            if (parsed.welcomeMessage) setWelcomeMessage(cleanHtmlEntities(parsed.welcomeMessage));
             if (parsed.primaryColor) setPrimaryColor(parsed.primaryColor);
             if (parsed.secondaryColor) setSecondaryColor(parsed.secondaryColor);
             if (parsed.surfaceColor) setSurfaceColor(parsed.surfaceColor);
@@ -419,7 +419,7 @@ export default function ChatbotSettingsPage() {
           localStorage.setItem("supportai_public_chatbot_id", cfg.public_chatbot_id);
         }
         if (cfg?.chatbot_name) setBotName(cleanHtmlEntities(cfg.chatbot_name));
-        if (cfg?.welcome_message) setWelcomeMessage(cfg.welcome_message);
+        if (cfg?.welcome_message) setWelcomeMessage(cleanHtmlEntities(cfg.welcome_message));
 
         const prim = extracted.primaryColor || cfg?.primary_color;
         const sec = extracted.secondaryColor || extracted.accentColor || cfg?.secondary_color;
@@ -897,17 +897,6 @@ export default function ChatbotSettingsPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setActiveKnowledgeTab("prompt")}
-                className={`px-3 py-1.5 rounded-lg font-medium transition-all cursor-pointer flex items-center gap-1.5 ${
-                  activeKnowledgeTab === "prompt"
-                    ? "bg-[#254B35] text-white shadow-xs"
-                    : "text-[#647267] hover:text-[#202820] hover:bg-[#F1F7EF]"
-                }`}
-              >
-                <FileText className="w-3.5 h-3.5" /> Training Prompt
-              </button>
-              <button
-                type="button"
                 onClick={() => setActiveKnowledgeTab("pages")}
                 className={`px-3 py-1.5 rounded-lg font-medium transition-all cursor-pointer flex items-center gap-1.5 ${
                   activeKnowledgeTab === "pages"
@@ -1040,50 +1029,7 @@ export default function ChatbotSettingsPage() {
               </div>
             )}
 
-            {/* TAB 2: Full Master Training Prompt */}
-            {activeKnowledgeTab === "prompt" && (
-              <div className="space-y-3 pt-1">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-[#647267] flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-[#254B35]" />
-                    Compiled System Knowledge Prompt (Injected into Chatbot)
-                  </label>
-                  <span className="text-[11px] text-[#647267]">
-                    {trainingPrompt.length} characters
-                  </span>
-                </div>
-                <textarea
-                  rows={9}
-                  value={trainingPrompt}
-                  onChange={(e) => setTrainingPrompt(e.target.value)}
-                  placeholder="The complete A-to-Z training prompt will appear here after fetching your website..."
-                  className="w-full bg-[#F1F7EF] border border-[#E5F0E1] rounded-xl p-3 text-xs font-mono text-[#202820] focus:outline-none focus:ring-2 focus:ring-[#A8C99B] leading-relaxed resize-y"
-                />
-                <div className="flex items-center justify-between gap-3 pt-1">
-                  <p className="text-[11px] text-[#647267]">
-                    Edit this prompt to add custom rules, promotions, or special instructions.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={handleRetrainChatbot}
-                    disabled={isRetraining || !trainingPrompt.trim()}
-                    className="px-5 py-2.5 bg-[#254B35] text-white rounded-xl text-xs font-medium hover:bg-[#1e3d2a] transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shrink-0 shadow-xs"
-                  >
-                    {isRetraining ? (
-                      <>
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Training...
-                      </>
-                    ) : (
-                      <>
-                        <Brain className="w-3.5 h-3.5" /> Retrain Chatbot
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* TAB 3: Crawled Pages List */}
+            {/* TAB 2: Crawled Pages List */}
             {activeKnowledgeTab === "pages" && (
               <div className="space-y-2 pt-1 max-h-72 overflow-y-auto">
                 {crawledPagesList.length > 0 ? (
@@ -1522,7 +1468,7 @@ export default function ChatbotSettingsPage() {
             >
               {/* Welcome Message */}
               <div className="max-w-[85%] bg-white p-3.5 rounded-2xl rounded-tl-sm text-xs text-[#202820] shadow-sm border border-black/5">
-                {welcomeMessage}
+                {cleanHtmlEntities(welcomeMessage)}
               </div>
 
               {/* Clickable Fixed Question Chips: Accent color styled */}
