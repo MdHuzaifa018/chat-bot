@@ -16,7 +16,15 @@ import {
   RotateCcw,
   ArrowRight,
   MessageSquarePlus,
+  AlertCircle,
 } from "lucide-react";
+import {
+  fetchWebsites,
+  fetchWebsiteDetails,
+  createWebsite,
+  updateChatbotConfig,
+  updateSuggestedQuestions,
+} from "@/api/saasApi";
 
 interface QAItem {
   id: string;
@@ -59,17 +67,21 @@ function toValid7Hex(hex?: string, fallback = "#000000"): string {
 export default function ChatbotSettingsPage() {
   const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
 
+  // Initial Config Loading State to prevent hardcoded defaults flashing on screen
+  const [isLoadingConfig, setIsLoadingConfig] = useState(true);
+
   // Website Scanner State
   const [websiteUrl, setWebsiteUrl] = useState("");
   const [isScanning, setIsScanning] = useState(false);
   const [scanResultMsg, setScanResultMsg] = useState("");
-  const [publicChatbotId, setPublicChatbotId] = useState("bot_demo12345678");
+  const [scanErrorMsg, setScanErrorMsg] = useState("");
+  const [publicChatbotId, setPublicChatbotId] = useState("");
   const [websiteId, setWebsiteId] = useState("");
 
   // Bot Identity & Theme State
   const [botName, setBotName] = useState("Support Assistant");
   const [welcomeMessage, setWelcomeMessage] = useState(
-    "Hello! How can I help you today? Pick a quick question below or type your own."
+    "Hello! How can I help you today? Pick a quick question below or ask anything about our services."
   );
   const [primaryColor, setPrimaryColor] = useState("#254B35");
   const [secondaryColor, setSecondaryColor] = useState("#3B82F6");
@@ -85,9 +97,9 @@ export default function ChatbotSettingsPage() {
 
   // AI Suggested Questions
   const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([
-    "What are your shipping and delivery timelines?",
-    "How do I request a refund or exchange?",
-    "Do you offer custom business plans?",
+    "What services or products do you offer?",
+    "How do I request support or get help?",
+    "What are your business hours?",
   ]);
 
   // Fixed Q&A State
@@ -106,28 +118,117 @@ export default function ChatbotSettingsPage() {
   const [previewMessages, setPreviewMessages] = useState<PreviewMessage[]>([]);
   const [previewInput, setPreviewInput] = useState("");
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
-  // Load previously saved frontend config if present
+  // Load live website & chatbot configuration directly from backend on mount and refresh
   useEffect(() => {
-    const raw = localStorage.getItem("supportai_config");
-    const storedBotId = localStorage.getItem("supportai_public_chatbot_id");
-    if (storedBotId) setPublicChatbotId(storedBotId);
+    let isMounted = true;
+    setIsLoadingConfig(true);
+    setScanErrorMsg("");
 
-    if (!raw) return;
-    try {
-      const parsed = JSON.parse(raw);
-      if (parsed.websiteUrl) setWebsiteUrl(parsed.websiteUrl);
-      if (parsed.botName) setBotName(parsed.botName);
-      if (parsed.welcomeMessage) setWelcomeMessage(parsed.welcomeMessage);
-      if (parsed.primaryColor) setPrimaryColor(parsed.primaryColor);
-      if (parsed.secondaryColor) setSecondaryColor(parsed.secondaryColor);
-      if (parsed.surfaceColor) setSurfaceColor(parsed.surfaceColor);
-      if (parsed.publicChatbotId) setPublicChatbotId(parsed.publicChatbotId);
-      if (parsed.detectedTheme) setDetectedTheme(parsed.detectedTheme);
-      if (Array.isArray(parsed.qaList)) setQaList(parsed.qaList);
-    } catch {
-      // Ignore malformed local storage
+    async function loadConfig() {
+      try {
+        const sites = await fetchWebsites();
+        if (!isMounted) return;
+
+        if (Array.isArray(sites) && sites.length > 0) {
+          const activeSite = sites[0];
+          setWebsiteId(activeSite.id);
+          setWebsiteUrl(activeSite.url || "");
+
+          const details = await fetchWebsiteDetails(activeSite.id);
+          if (!isMounted) return;
+
+          const cfg = details.chatbotConfig;
+          if (cfg) {
+            if (cfg.public_chatbot_id) {
+              setPublicChatbotId(cfg.public_chatbot_id);
+              localStorage.setItem("supportai_public_chatbot_id", cfg.public_chatbot_id);
+            }
+            if (cfg.chatbot_name) setBotName(cfg.chatbot_name);
+            if (cfg.welcome_message) setWelcomeMessage(cfg.welcome_message);
+            if (cfg.primary_color) setPrimaryColor(cfg.primary_color);
+            if (cfg.secondary_color) setSecondaryColor(cfg.secondary_color);
+            if (cfg.background_color) setSurfaceColor(cfg.background_color);
+          } else {
+            setBotName(`${activeSite.name || "Support"} Assistant`);
+          }
+
+          // Load questions and Q&A from backend
+          if (Array.isArray(details.suggestedQuestions) && details.suggestedQuestions.length > 0) {
+            const rawQuestions = details.suggestedQuestions
+              .map((q: any) => (typeof q === "string" ? q : q.question_text))
+              .filter(Boolean);
+            if (rawQuestions.length > 0) {
+              setSuggestedQuestions(rawQuestions);
+            }
+
+            const mappedQa: QAItem[] = details.suggestedQuestions
+              .filter((q: any) => typeof q === "object" && q.answer && q.answer.trim())
+              .map((q: any) => ({
+                id: q.id || String(Math.random()),
+                question: q.question_text,
+                answer: q.answer,
+              }));
+            if (mappedQa.length > 0) {
+              setQaList(mappedQa);
+            }
+          }
+
+          // Load extracted theme colors
+          const extracted = details.extractedKnowledge?.themeColors || details.detectedTheme || {};
+          const prim = cfg?.primary_color || extracted.primaryColor || "#254B35";
+          const sec = cfg?.secondary_color || extracted.secondaryColor || "#3B82F6";
+          const paletteColors = Array.from(
+            new Set(
+              [
+                prim,
+                sec,
+                extracted.accentColor,
+                extracted.backgroundColor,
+                ...(extracted.suggestedColors || []),
+              ].filter(Boolean)
+            )
+          ) as string[];
+
+          setDetectedTheme({
+            primaryColor: prim,
+            secondaryColor: sec,
+            accentColor: extracted.accentColor || sec,
+            backgroundColor: cfg?.background_color || extracted.backgroundColor || "#F1F7EF",
+            suggestedColors:
+              paletteColors.length > 0
+                ? paletteColors
+                : [prim, sec, "#A855F7", "#EC4899", "#10B981"],
+          });
+        }
+      } catch (err) {
+        console.warn("Could not load backend config, checking local storage fallback:", err);
+        const raw = typeof window !== "undefined" ? localStorage.getItem("supportai_config") : null;
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw);
+            if (parsed.websiteUrl) setWebsiteUrl(parsed.websiteUrl);
+            if (parsed.botName) setBotName(parsed.botName);
+            if (parsed.welcomeMessage) setWelcomeMessage(parsed.welcomeMessage);
+            if (parsed.primaryColor) setPrimaryColor(parsed.primaryColor);
+            if (parsed.secondaryColor) setSecondaryColor(parsed.secondaryColor);
+            if (parsed.surfaceColor) setSurfaceColor(parsed.surfaceColor);
+            if (parsed.publicChatbotId) setPublicChatbotId(parsed.publicChatbotId);
+            if (parsed.detectedTheme) setDetectedTheme(parsed.detectedTheme);
+            if (Array.isArray(parsed.qaList)) setQaList(parsed.qaList);
+          } catch {}
+        }
+      } finally {
+        if (isMounted) setIsLoadingConfig(false);
+      }
     }
+
+    loadConfig();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   // Format and handle hex input changes smoothly
@@ -189,110 +290,72 @@ export default function ChatbotSettingsPage() {
     return list;
   };
 
-  // AI Website Fetch & Auto-Adapt (Connected to live backend crawler & Gemini)
+  // AI Website Fetch & Auto-Adapt (Connected to live backend crawler & Gemini RAG)
   const handleScanWebsite = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!websiteUrl.trim()) return;
 
     setIsScanning(true);
     setScanResultMsg("");
+    setScanErrorMsg("");
 
     try {
-      const res = await fetch(`${API_BASE}/websites`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: websiteUrl.trim() }),
-      });
+      const res = await createWebsite(websiteUrl.trim());
+      const data = res?.data;
+      if (data) {
+        const cfg = data.chatbotConfig;
+        const site = data.website;
+        const extracted = data.detectedTheme || data.extractedKnowledge?.themeColors || {};
 
-      if (res.ok) {
-        const json = await res.json();
-        const data = json.data;
-        if (data) {
-          const cfg = data.chatbotConfig;
-          const site = data.website;
-          const extracted = data.detectedTheme || data.theme || {};
-
-          if (cfg?.public_chatbot_id) {
-            setPublicChatbotId(cfg.public_chatbot_id);
-            localStorage.setItem("supportai_public_chatbot_id", cfg.public_chatbot_id);
-          }
-          if (site?.id) setWebsiteId(site.id);
-          if (cfg?.chatbot_name) setBotName(cfg.chatbot_name);
-          if (cfg?.welcome_message) setWelcomeMessage(cfg.welcome_message);
-
-          const prim = extracted.primaryColor || cfg?.primary_color;
-          const sec = extracted.secondaryColor || extracted.accentColor || cfg?.secondary_color;
-          const acc = extracted.accentColor || sec;
-          const bg = extracted.backgroundColor || cfg?.background_color;
-
-          if (prim) setPrimaryColor(prim);
-          if (sec) setSecondaryColor(sec);
-          if (bg && bg !== "#FFFFFF") setSurfaceColor(bg);
-
-          const suggestions: string[] = [];
-          if (prim) suggestions.push(prim);
-          if (acc && acc !== prim) suggestions.push(acc);
-          if (sec && sec !== prim && sec !== acc) suggestions.push(sec);
-          if (Array.isArray(extracted.suggestedColors)) {
-            suggestions.push(...extracted.suggestedColors);
-          }
-
-          setDetectedTheme({
-            primaryColor: prim,
-            secondaryColor: sec,
-            accentColor: acc,
-            backgroundColor: bg,
-            suggestedColors: Array.from(new Set(suggestions)),
-          });
-
-          if (Array.isArray(data.suggestedQuestions) && data.suggestedQuestions.length > 0) {
-            setSuggestedQuestions(data.suggestedQuestions);
-          }
-          setIsScanning(false);
-          setScanResultMsg(
-            `Successfully crawled ${site?.name || websiteUrl}: ${data.pagesCrawled || 1} pages indexed, theme adapted!`
-          );
-          return;
+        if (site?.id) setWebsiteId(site.id);
+        if (cfg?.public_chatbot_id) {
+          setPublicChatbotId(cfg.public_chatbot_id);
+          localStorage.setItem("supportai_public_chatbot_id", cfg.public_chatbot_id);
         }
+        if (cfg?.chatbot_name) setBotName(cfg.chatbot_name);
+        if (cfg?.welcome_message) setWelcomeMessage(cfg.welcome_message);
+
+        const prim = extracted.primaryColor || cfg?.primary_color;
+        const sec = extracted.secondaryColor || extracted.accentColor || cfg?.secondary_color;
+        const acc = extracted.accentColor || sec;
+        const bg = extracted.backgroundColor || cfg?.background_color;
+
+        if (prim) setPrimaryColor(prim);
+        if (sec) setSecondaryColor(sec);
+        if (bg && bg !== "#FFFFFF") setSurfaceColor(bg);
+
+        const suggestions: string[] = [];
+        if (prim) suggestions.push(prim);
+        if (acc && acc !== prim) suggestions.push(acc);
+        if (sec && sec !== prim && sec !== acc) suggestions.push(sec);
+        if (Array.isArray(extracted.suggestedColors)) {
+          suggestions.push(...extracted.suggestedColors);
+        }
+
+        setDetectedTheme({
+          primaryColor: prim || "#254B35",
+          secondaryColor: sec || "#3B82F6",
+          accentColor: acc || "#A855F7",
+          backgroundColor: bg || "#F1F7EF",
+          suggestedColors: Array.from(new Set(suggestions)),
+        });
+
+        if (Array.isArray(data.suggestedQuestions) && data.suggestedQuestions.length > 0) {
+          setSuggestedQuestions(data.suggestedQuestions);
+        }
+
+        setScanResultMsg(
+          `Successfully crawled ${site?.name || websiteUrl}: ${data.pagesCrawled || 1} pages indexed with Gemini AI knowledge!`
+        );
       }
-    } catch (err) {
-      console.warn("Live backend crawl fallback to local parser:", err);
+    } catch (err: any) {
+      console.error("Live website crawl error:", err);
+      setScanErrorMsg(
+        err?.message || "Failed to crawl website. Please make sure the URL is valid and publicly reachable."
+      );
+    } finally {
+      setIsScanning(false);
     }
-
-    // Fallback if backend is offline
-    const cleanDomain = websiteUrl
-      .replace(/^https?:\/\/(www\.)?/, "")
-      .split("/")[0];
-    const brandLabel = cleanDomain.split(".")[0] || "Brand";
-    const formattedBrand =
-      brandLabel.charAt(0).toUpperCase() + brandLabel.slice(1);
-
-    const fallbackPrimary = "#1E4D3B";
-    const fallbackSecondary = "#3B82F6";
-    const fallbackAccent = "#A855F7";
-
-    setBotName(`${formattedBrand} Assistant`);
-    setPrimaryColor(fallbackPrimary);
-    setSecondaryColor(fallbackSecondary);
-    setSurfaceColor("#EDF6F1");
-    setDetectedTheme({
-      primaryColor: fallbackPrimary,
-      secondaryColor: fallbackSecondary,
-      accentColor: fallbackAccent,
-      backgroundColor: "#EDF6F1",
-      suggestedColors: [fallbackPrimary, fallbackSecondary, fallbackAccent, "#EC4899", "#10B981"],
-    });
-    setSuggestedQuestions([
-      `What products or services does ${formattedBrand} offer?`,
-      `How can I track my order on ${cleanDomain}?`,
-      "What is your cancellation and refund policy?",
-      "How do I contact customer support directly?",
-    ]);
-
-    setIsScanning(false);
-    setScanResultMsg(
-      `Scanned ${cleanDomain}: theme adapted and 4 questions suggested.`
-    );
   };
 
   // Add Fixed Q&A
@@ -354,7 +417,7 @@ export default function ChatbotSettingsPage() {
     // 2. Query live Gemini Chatbot API
     try {
       const activeBotId = publicChatbotId || localStorage.getItem("supportai_public_chatbot_id") || "bot_demo12345678";
-      const res = await fetch(`http://localhost:5000/api/widget/${activeBotId}/message`, {
+      const res = await fetch(`${API_BASE}/widget/${activeBotId}/message`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -387,44 +450,95 @@ export default function ChatbotSettingsPage() {
 
   // Save Config to local storage and backend
   const handleSaveConfig = async () => {
-    const payload = {
-      websiteUrl,
-      botName,
-      welcomeMessage,
-      primaryColor,
-      secondaryColor,
-      surfaceColor,
-      qaList,
-      publicChatbotId,
-      detectedTheme,
-      updatedAt: Date.now(),
-    };
+    setIsSaving(true);
+    try {
+      const payload = {
+        websiteUrl,
+        botName,
+        welcomeMessage,
+        primaryColor,
+        secondaryColor,
+        surfaceColor,
+        qaList,
+        publicChatbotId,
+        detectedTheme,
+        updatedAt: Date.now(),
+      };
 
-    localStorage.setItem("supportai_config", JSON.stringify(payload));
-    if (publicChatbotId) {
-      localStorage.setItem("supportai_public_chatbot_id", publicChatbotId);
-    }
-
-    if (websiteId) {
-      try {
-        await fetch(`${API_BASE}/websites/${websiteId}/chatbot`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            chatbot_name: botName,
-            welcome_message: welcomeMessage,
-            primary_color: primaryColor,
-            secondary_color: secondaryColor,
-          }),
-        });
-      } catch {
-        // ignore offline save
+      localStorage.setItem("supportai_config", JSON.stringify(payload));
+      if (publicChatbotId) {
+        localStorage.setItem("supportai_public_chatbot_id", publicChatbotId);
       }
-    }
 
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 3000);
+      if (websiteId) {
+        await updateChatbotConfig(websiteId, {
+          chatbot_name: botName,
+          welcome_message: welcomeMessage,
+          primary_color: primaryColor,
+          secondary_color: secondaryColor,
+          background_color: surfaceColor,
+        });
+
+        const questionsPayload = [
+          ...suggestedQuestions.map((q) => ({ question_text: q })),
+          ...qaList.map((qa) => ({ question_text: qa.question, answer: qa.answer })),
+        ];
+        if (questionsPayload.length > 0) {
+          await updateSuggestedQuestions(websiteId, questionsPayload).catch(() => undefined);
+        }
+      }
+
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 3000);
+    } catch (err) {
+      console.warn("Failed to persist config to backend:", err);
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 3000);
+    } finally {
+      setIsSaving(false);
+    }
   };
+
+  if (isLoadingConfig) {
+    return (
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <div className="space-y-2">
+            <div className="h-7 w-56 bg-white/80 rounded-xl animate-pulse" />
+            <div className="h-4 w-96 bg-white/60 rounded-lg animate-pulse" />
+          </div>
+          <div className="h-10 w-44 bg-white/80 rounded-full animate-pulse" />
+        </div>
+        <div className="grid lg:grid-cols-12 gap-8 items-start">
+          <div className="lg:col-span-7 space-y-6">
+            <div className="h-40 bg-white/90 rounded-3xl border border-[#E5F0E1] p-6 shadow-sm flex flex-col justify-center gap-3">
+              <div className="h-5 w-48 bg-[#E5F0E1] rounded animate-pulse" />
+              <div className="h-11 w-full bg-[#F1F7EF] rounded-xl animate-pulse" />
+            </div>
+            <div className="h-64 bg-white/90 rounded-3xl border border-[#E5F0E1] p-6 shadow-sm flex flex-col justify-center gap-3">
+              <div className="h-5 w-52 bg-[#E5F0E1] rounded animate-pulse" />
+              <div className="h-12 w-full bg-[#F1F7EF] rounded-xl animate-pulse" />
+              <div className="h-12 w-full bg-[#F1F7EF] rounded-xl animate-pulse" />
+            </div>
+            <div className="h-36 bg-white/90 rounded-3xl border border-[#E5F0E1] p-6 shadow-sm flex flex-col justify-center gap-3">
+              <div className="h-5 w-40 bg-[#E5F0E1] rounded animate-pulse" />
+              <div className="h-9 w-full bg-[#F1F7EF] rounded-full animate-pulse" />
+            </div>
+          </div>
+          <div className="lg:col-span-5">
+            <div className="h-[600px] bg-white/90 rounded-3xl border border-[#E5F0E1] shadow-xl p-4 flex flex-col justify-between">
+              <div className="h-16 w-full bg-[#E5F0E1] rounded-2xl animate-pulse" />
+              <div className="space-y-3 flex-1 py-6">
+                <div className="h-12 w-3/4 bg-[#F1F7EF] rounded-2xl animate-pulse" />
+                <div className="h-10 w-1/2 ml-auto bg-[#E5F0E1] rounded-2xl animate-pulse" />
+              </div>
+              <div className="h-12 w-full bg-[#F1F7EF] rounded-full animate-pulse" />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -510,6 +624,13 @@ export default function ChatbotSettingsPage() {
               <div className="mt-3 p-3 rounded-xl bg-[#E5F0E1] text-[#254B35] text-xs font-medium flex items-center gap-2">
                 <Check className="w-4 h-4 shrink-0" />
                 <span>{scanResultMsg}</span>
+              </div>
+            )}
+
+            {scanErrorMsg && (
+              <div className="mt-3 p-3 rounded-xl bg-red-50 text-red-700 text-xs font-medium flex items-center gap-2 border border-red-200">
+                <AlertCircle className="w-4 h-4 shrink-0 text-red-500" />
+                <span>{scanErrorMsg}</span>
               </div>
             )}
           </div>

@@ -14,6 +14,8 @@ import {
   LogOut,
 } from "lucide-react";
 import ProfileModal from "@/components/ProfileModal";
+import { LogoutConfirmModal } from "@/components/LogoutConfirmModal";
+import { fetchCurrentAccount, signOut } from "@/api/saasApi";
 
 interface AdminSession {
   name: string;
@@ -38,6 +40,8 @@ export default function AdminLayout({
   const [session, setSession] = useState<AdminSession | null>(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   useEffect(() => {
     // Allow the login page to render without checking auth
@@ -46,20 +50,42 @@ export default function AdminLayout({
       return;
     }
 
-    const raw = localStorage.getItem("supportai_admin_session");
-    if (!raw) {
-      router.replace("/admin/login");
-      return;
-    }
+    let isMounted = true;
+    fetchCurrentAccount()
+      .then(({ account }) => {
+        if (!isMounted) return;
+        if (account.accountType === "admin") {
+          setSession({
+            name: account.name || "Administrator",
+            email: account.email || "",
+            permissions: (account.permissions as any) || {
+              acceptRequests: true,
+              rejectRequests: true,
+              viewTelemetry: true,
+              manageWebsites: true,
+              manageTeam: true,
+            },
+          });
+          setCheckingAuth(false);
+        } else {
+          router.replace("/admin/login");
+        }
+      })
+      .catch(() => {
+        const raw = typeof window !== "undefined" ? localStorage.getItem("supportai_admin_session") : null;
+        if (raw) {
+          try {
+            setSession(JSON.parse(raw));
+            setCheckingAuth(false);
+            return;
+          } catch {}
+        }
+        if (isMounted) router.replace("/admin/login");
+      });
 
-    try {
-      setSession(JSON.parse(raw));
-    } catch {
-      router.replace("/admin/login");
-      return;
-    }
-
-    setCheckingAuth(false);
+    return () => {
+      isMounted = false;
+    };
   }, [pathname, router]);
 
   // 1. Render login page full-screen without sidebar
@@ -68,14 +94,14 @@ export default function AdminLayout({
   }
 
   // 2. Prevent dashboard flash while redirecting unauthenticated users
-if (checkingAuth || !session) {
+  if (checkingAuth || !session) {
     return (
-      <>
-        <div className="fixed inset-0 z-50 bg-[#F1F7EF] flex items-center justify-center text-sm text-[#647267]">
-          Checking access...
+      <div className="fixed inset-0 z-50 bg-[#F1F7EF] flex items-center justify-center text-sm text-[#647267]">
+        <div className="flex items-center gap-3">
+          <div className="w-5 h-5 border-2 border-[#254B35] border-t-transparent rounded-full animate-spin" />
+          <span>Checking access...</span>
         </div>
-        <div className="hidden">{children}</div>
-      </>
+      </div>
     );
   }
 
@@ -106,9 +132,16 @@ if (checkingAuth || !session) {
     },
   ].filter((item) => item.visible);
 
-  const handleSignOut = () => {
-    localStorage.removeItem("supportai_admin_session");
-    router.replace("/admin/login");
+  const confirmSignOut = async () => {
+    setIsLoggingOut(true);
+    try {
+      await signOut().catch(() => undefined);
+      localStorage.removeItem("supportai_admin_session");
+      router.replace("/admin/login");
+    } finally {
+      setIsLoggingOut(false);
+      setShowLogoutModal(false);
+    }
   };
 
   return (
@@ -153,7 +186,7 @@ if (checkingAuth || !session) {
 
         <div className="p-4 border-t border-[#E5F0E1]">
           <button
-            onClick={handleSignOut}
+            onClick={() => setShowLogoutModal(true)}
             className="flex items-center gap-3 px-4 py-3 w-full text-sm font-medium text-[#647267] hover:bg-red-50 hover:text-red-600 rounded-xl transition-colors cursor-pointer"
           >
             <LogOut className="w-5 h-5" />
@@ -191,8 +224,11 @@ if (checkingAuth || !session) {
               })}
             </nav>
             <button
-              onClick={handleSignOut}
-              className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-red-600 rounded-xl"
+              onClick={() => {
+                setMobileOpen(false);
+                setShowLogoutModal(true);
+              }}
+              className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-red-600 rounded-xl cursor-pointer"
             >
               <LogOut className="w-5 h-5" />
               Sign Out
@@ -254,6 +290,15 @@ if (checkingAuth || !session) {
               );
             }
           }}
+        />
+
+        <LogoutConfirmModal
+          isOpen={showLogoutModal}
+          onClose={() => setShowLogoutModal(false)}
+          onConfirm={confirmSignOut}
+          isLoading={isLoggingOut}
+          title="Sign out of Admin Console?"
+          description="Are you sure you want to log out of the SupportAI administrator console?"
         />
       </div>
     </div>

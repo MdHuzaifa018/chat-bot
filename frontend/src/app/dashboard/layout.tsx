@@ -4,6 +4,8 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Bot, Sliders, Code2, User, LogOut, Menu, X } from "lucide-react";
+import { fetchCurrentAccount, signOut } from "@/api/saasApi";
+import { LogoutConfirmModal } from "@/components/LogoutConfirmModal";
 import ProfileModal from "@/components/ProfileModal";
 
 export default function DashboardLayout({
@@ -15,12 +17,34 @@ export default function DashboardLayout({
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [clientName, setClientName] = useState("Client");
+  const [checkingAuth, setCheckingAuth] = useState(true);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
 
   useEffect(() => {
-    const stored = localStorage.getItem("supportai_client_user");
-    if (stored) setClientName(stored);
-  }, []);
+    let isMounted = true;
+    fetchCurrentAccount()
+      .then(({ account }) => {
+        if (!isMounted) return;
+        if (account.accountType !== "client") {
+          router.replace("/");
+          return;
+        }
+        const displayName = account.name || (account as any).businessName || account.username || "Client";
+        setClientName(displayName);
+      })
+      .catch(() => {
+        if (isMounted) router.replace("/");
+      })
+      .finally(() => {
+        if (isMounted) setCheckingAuth(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [router]);
 
   const navItems = [
     { href: "/dashboard", label: "Chatbot Settings", icon: Sliders },
@@ -28,11 +52,27 @@ export default function DashboardLayout({
     { href: "/dashboard/profile", label: "Profile Settings", icon: User },
   ];
 
-  const handleSignOut = () => {
-    // TODO (Backend Team): Clear auth token/cookie here
-    localStorage.removeItem("supportai_client_user");
-    router.push("/");
+  const confirmSignOut = async () => {
+    setIsLoggingOut(true);
+    try {
+      await signOut().catch(() => undefined);
+      router.replace("/");
+    } finally {
+      setIsLoggingOut(false);
+      setShowLogoutModal(false);
+    }
   };
+
+  if (checkingAuth) {
+    return (
+      <div className="min-h-screen grid place-items-center bg-[#F1F7EF] text-sm text-[#647267]">
+        <div className="flex items-center gap-3">
+          <div className="w-5 h-5 border-2 border-[#254B35] border-t-transparent rounded-full animate-spin" />
+          <span>Loading client workspace...</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#F1F7EF] flex text-[#202820]">
@@ -71,7 +111,7 @@ export default function DashboardLayout({
 
         <div className="p-4 border-t border-[#E5F0E1]">
           <button
-            onClick={handleSignOut}
+            onClick={() => setShowLogoutModal(true)}
             className="flex items-center gap-3 px-4 py-3 w-full text-sm font-medium text-[#647267] hover:bg-red-50 hover:text-red-600 rounded-xl transition-colors cursor-pointer"
           >
             <LogOut className="w-5 h-5" />
@@ -117,8 +157,11 @@ export default function DashboardLayout({
               })}
             </nav>
             <button
-              onClick={handleSignOut}
-              className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-red-600 rounded-xl"
+              onClick={() => {
+                setMobileOpen(false);
+                setShowLogoutModal(true);
+              }}
+              className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-red-600 rounded-xl cursor-pointer"
             >
               <LogOut className="w-5 h-5" />
               Sign Out
@@ -176,8 +219,20 @@ export default function DashboardLayout({
           onClose={() => setProfileModalOpen(false)}
           accountType="client"
           onProfileUpdated={(updated) => {
-            if (updated.name) setClientName(updated.name);
+            if (updated.name || updated.businessName) {
+              setClientName(updated.name || updated.businessName || "Client");
+            }
           }}
+        />
+
+        {/* Custom Logout Confirmation Modal */}
+        <LogoutConfirmModal
+          isOpen={showLogoutModal}
+          onClose={() => setShowLogoutModal(false)}
+          onConfirm={confirmSignOut}
+          isLoading={isLoggingOut}
+          title="Sign out of Client Dashboard?"
+          description="Are you sure you want to log out? You will need your access code to log back in."
         />
       </div>
     </div>

@@ -275,10 +275,17 @@ export class WebsiteService {
   }
 
   /**
-   * List websites for user
+   * List websites for user / client account
    */
-  static async listWebsites(userId?: string): Promise<Website[]> {
-    const filter = userId ? `user_id=eq.${encodeURIComponent(userId)}&` : "";
+  static async listWebsites(accountId?: string, userId?: string): Promise<Website[]> {
+    let filter = "";
+    if (accountId && userId && accountId !== userId) {
+      filter = `or=(client_account_id.eq.${encodeURIComponent(accountId)},user_id.eq.${encodeURIComponent(userId)},user_id.eq.${encodeURIComponent(accountId)})&`;
+    } else if (accountId) {
+      filter = `or=(client_account_id.eq.${encodeURIComponent(accountId)},user_id.eq.${encodeURIComponent(accountId)})&`;
+    } else if (userId) {
+      filter = `user_id=eq.${encodeURIComponent(userId)}&`;
+    }
     const rows = await supabaseRequest<Website[]>(
       `websites?${filter}select=id,user_id,name,url,domain,description,crawl_status,last_crawled_at,created_at,updated_at&order=created_at.desc&limit=50`
     );
@@ -377,19 +384,23 @@ export class WebsiteService {
   static async updateSuggestedQuestions(
     websiteId: string,
     clientAccountId: string,
-    questions: Array<{ question_text: string; answer?: string }>
+    questions: Array<string | { question_text: string; answer?: string }>
   ): Promise<SuggestedQuestion[]> {
     await this.getOwnedWebsite(websiteId, clientAccountId);
     if (!Array.isArray(questions) || questions.length > 30) {
       throw new ApiError(400, "INVALID_QUESTIONS", "Provide up to 30 questions.");
     }
-    const sanitized = questions.map((item, index) => ({
-      website_id: websiteId,
-      question_text: String(item.question_text ?? "").trim().slice(0, 200),
-      answer: String(item.answer ?? "").trim().slice(0, 2000) || null,
-      display_order: index,
-      is_active: true,
-    })).filter((item) => item.question_text.length > 0);
+    const sanitized = questions.map((item, index) => {
+      const qText = typeof item === "string" ? item : (item.question_text ?? "");
+      const aText = typeof item === "string" ? null : (item.answer ?? null);
+      return {
+        website_id: websiteId,
+        question_text: String(qText).trim().slice(0, 200),
+        answer: aText ? String(aText).trim().slice(0, 2000) : null,
+        display_order: index,
+        is_active: true,
+      };
+    }).filter((item) => item.question_text.length > 0);
 
     await supabaseRequest<undefined>(`suggested_questions?website_id=eq.${encodeURIComponent(websiteId)}`, {
       method: "DELETE",

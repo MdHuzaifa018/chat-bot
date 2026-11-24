@@ -29,7 +29,7 @@ export class WebsiteController {
   static async listWebsites(req: AccountAuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const account = requireClient(req);
-      const websites = await WebsiteService.listWebsites(account.id);
+      const websites = await WebsiteService.listWebsites(account.id, account.userId);
       res.status(200).json({ data: websites });
     } catch (error) {
       next(error);

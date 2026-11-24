@@ -86,6 +86,14 @@ export async function apiRequest<T = any>(path: string, init: RequestInit = {}):
 }
 
 export async function signInClient(username: string, accessCode: string) {
+  if (typeof window !== "undefined") {
+    try {
+      localStorage.removeItem("supportai_config");
+      localStorage.removeItem("supportai_public_chatbot_id");
+      localStorage.removeItem("supportai_client_user");
+      localStorage.removeItem("supportai_client_email");
+    } catch {}
+  }
   const res = await apiRequest<{ authenticated: true; account: Account; token?: string }>("/auth/client/login", {
     method: "POST",
     body: JSON.stringify({ username: username.trim(), accessCode: accessCode.trim() }),
@@ -97,6 +105,15 @@ export async function signInClient(username: string, accessCode: string) {
 }
 
 export async function signInAdmin(email: string, password: string) {
+  if (typeof window !== "undefined") {
+    try {
+      localStorage.removeItem("supportai_admin_session");
+      localStorage.removeItem("supportai_config");
+      localStorage.removeItem("supportai_public_chatbot_id");
+      localStorage.removeItem("supportai_client_user");
+      localStorage.removeItem("supportai_client_email");
+    } catch {}
+  }
   const res = await apiRequest<{ authenticated: true; account: Account; token?: string }>("/auth/admin/login", {
     method: "POST",
     body: JSON.stringify({ email: email.trim(), password }),
@@ -114,10 +131,18 @@ export async function fetchCurrentAccount() {
 export async function signOut() {
   setStoredAuthToken(null);
   deleteCookie("supportai_session");
-  try {
-    localStorage.removeItem("supportai_token");
-  } catch {}
-  return apiRequest("/auth/logout", { method: "POST" });
+  deleteCookie("supportai_token");
+  if (typeof window !== "undefined") {
+    try {
+      localStorage.removeItem("supportai_token");
+      localStorage.removeItem("supportai_client_user");
+      localStorage.removeItem("supportai_client_email");
+      localStorage.removeItem("supportai_admin_session");
+      localStorage.removeItem("supportai_config");
+      localStorage.removeItem("supportai_public_chatbot_id");
+    } catch {}
+  }
+  return apiRequest("/auth/logout", { method: "POST" }).catch(() => ({}));
 }
 export async function submitAccessRequest(data: { businessName: string; contactName: string; email: string; websiteUrl: string }) {
   return apiRequest("/auth/client/request-access", { method: "POST", body: JSON.stringify(data) });
@@ -210,13 +235,13 @@ export async function fetchUserProfile(preferredType?: "client" | "admin"): Prom
   try {
     const res = await apiRequest<{ success?: boolean; data?: any; account?: any }>("/auth/profile");
     const profile = res.data || res.account || res;
-    if (profile && profile.email) {
+    if (profile && (profile.email || profile.name || profile.username)) {
       return {
         accountType: profile.accountType || (profile.role ? "admin" : "client"),
         id: profile.id || "usr-1",
         name: profile.name || (profile.email ? profile.email.split("@")[0] : "User"),
-        email: profile.email,
-        businessName: profile.businessName || profile.name || "My Business",
+        email: profile.email || "",
+        businessName: profile.businessName || profile.name || "Business Workspace",
         username: profile.username || (profile.email ? profile.email.split("@")[0] : "user"),
         role: profile.role || "super_admin",
         permissions: profile.permissions || {
@@ -229,51 +254,35 @@ export async function fetchUserProfile(preferredType?: "client" | "admin"): Prom
       };
     }
   } catch (err) {
-    console.warn("fetchUserProfile live API unavailable, using local session:", err);
+    console.warn("fetchUserProfile live API unavailable, attempting session me:", err);
   }
 
-  // Graceful local storage session fallback
-  if (typeof window !== "undefined") {
-    const adminRaw = localStorage.getItem("supportai_admin_session");
-    if (adminRaw && preferredType !== "client") {
-      try {
-        const adminSession = JSON.parse(adminRaw);
-        return {
-          accountType: "admin",
-          id: "admin-local-1",
-          name: adminSession.name || "Administrator",
-          email: adminSession.email || "admin@curiousrabit.online",
-          role: adminSession.permissions?.manageTeam ? "super_admin" : "admin",
-          permissions: adminSession.permissions || {
-            acceptRequests: true,
-            rejectRequests: true,
-            viewTelemetry: true,
-            manageWebsites: true,
-            manageTeam: true,
-          },
-        };
-      } catch {}
+  // Live session fallback directly from authenticated session (/api/auth/me)
+  try {
+    const me = await fetchCurrentAccount();
+    if (me?.account) {
+      return {
+        accountType: me.account.accountType,
+        id: me.account.id,
+        name: me.account.name || (me.account.email ? me.account.email.split("@")[0] : "User"),
+        email: me.account.email || "",
+        businessName: me.account.name || "Client Business",
+        username: me.account.username || (me.account.email ? me.account.email.split("@")[0] : "user"),
+        role: me.account.role || "super_admin",
+        permissions: me.account.permissions,
+      };
     }
-
-    const clientUser = localStorage.getItem("supportai_client_user");
-    const clientEmail = localStorage.getItem("supportai_client_email");
-    return {
-      accountType: "client",
-      id: "client-local-1",
-      name: clientUser || "Demo Client",
-      email: clientEmail || `${(clientUser || "client").toLowerCase().replace(/\s+/g, ".")}@example.com`,
-      businessName: clientUser ? `${clientUser} Workspace` : "Demo Workspace Client",
-      username: (clientUser || "client_user").toLowerCase().replace(/\s+/g, "_"),
-    };
+  } catch (err) {
+    console.warn("Current session unavailable:", err);
   }
 
   return {
-    accountType: "client",
-    id: "default-user",
-    name: "Client User",
-    email: "client@example.com",
-    businessName: "Demo Workspace Client",
-    username: "client_user",
+    accountType: preferredType || "client",
+    id: "user",
+    name: "User",
+    email: "",
+    businessName: "Workspace",
+    username: "user",
   };
 }
 

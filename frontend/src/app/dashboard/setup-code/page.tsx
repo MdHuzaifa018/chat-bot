@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
+import { fetchWebsites, fetchWebsiteDetails } from "@/api/saasApi";
 import {
   Code2,
   Copy,
@@ -20,20 +21,50 @@ export default function SetupCodePage() {
   const [botId, setBotId] = useState("bot_demo12345678");
 
   useEffect(() => {
-    const raw = localStorage.getItem("supportai_config");
-    const storedBotId = localStorage.getItem("supportai_public_chatbot_id");
-    if (storedBotId) setBotId(storedBotId);
+    let isMounted = true;
 
-    if (raw) {
+    async function loadBotInfo() {
       try {
-        const parsed = JSON.parse(raw);
-        if (parsed.botName) setBotName(parsed.botName);
-        if (parsed.publicChatbotId) setBotId(parsed.publicChatbotId);
-        setIsConfigured(true);
-      } catch {
-        setIsConfigured(false);
+        const sites = await fetchWebsites();
+        if (!isMounted) return;
+
+        if (Array.isArray(sites) && sites.length > 0) {
+          const details = await fetchWebsiteDetails(sites[0].id);
+          if (!isMounted) return;
+
+          const cfg = details.chatbotConfig;
+          if (cfg?.public_chatbot_id) {
+            setBotId(cfg.public_chatbot_id);
+            if (cfg.chatbot_name) setBotName(cfg.chatbot_name);
+            setIsConfigured(true);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn("Could not load backend websites for setup code, checking local storage:", err);
+      }
+
+      const raw = typeof window !== "undefined" ? localStorage.getItem("supportai_config") : null;
+      const storedBotId = typeof window !== "undefined" ? localStorage.getItem("supportai_public_chatbot_id") : null;
+      if (storedBotId) setBotId(storedBotId);
+
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed.botName) setBotName(parsed.botName);
+          if (parsed.publicChatbotId) setBotId(parsed.publicChatbotId);
+          setIsConfigured(true);
+        } catch {
+          setIsConfigured(false);
+        }
       }
     }
+
+    loadBotInfo();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const embedScript = `<script
