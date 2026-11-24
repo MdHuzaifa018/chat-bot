@@ -454,10 +454,46 @@ export class WebsiteService {
 
     const pages = await CrawlerService.crawlWebsite(websiteId, website.url, 8);
 
+    // Extract updated A-to-Z knowledge & update chatbot_configs.system_prompt_override
+    const mappedPages = pages.map((r) => ({
+      url: r.url,
+      path: r.path,
+      title: r.title,
+      description: r.description,
+      cleanText: r.cleanText,
+    }));
+    const extractedKnowledge = CrawlerService.extractAtoZKnowledge(mappedPages, website.domain, website.name);
+
+    try {
+      await supabaseRequest(`chatbot_configs?website_id=eq.${encodeURIComponent(websiteId)}`, {
+        method: "PATCH",
+        body: {
+          system_prompt_override: extractedKnowledge.trainingPrompt,
+        },
+      });
+    } catch (cfgErr) {
+      console.warn("[WebsiteService] Failed to patch system_prompt_override on recrawl:", cfgErr);
+    }
+
+    try {
+      await supabaseRequest("knowledge_documents", {
+        method: "POST",
+        body: {
+          website_id: website.id,
+          title: `${website.name} - Master A-to-Z Business Knowledge Base`,
+          source_type: "manual_doc",
+          source_url: website.url,
+          content: extractedKnowledge.trainingPrompt,
+        },
+      });
+    } catch {
+      // ignore
+    }
+
     await supabaseRequest(`websites?id=eq.${websiteId}`, {
       method: "PATCH",
       body: {
-        crawl_status: "completed",
+        crawl_status: pages.length > 0 ? "completed" : "failed",
         last_crawled_at: new Date().toISOString(),
       },
     });

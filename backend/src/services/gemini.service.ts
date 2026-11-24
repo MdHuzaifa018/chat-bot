@@ -110,6 +110,42 @@ export class GeminiService {
         }
       }
 
+      // 4B. Check for Schedule / Timeline / Date / Venue query
+      if (/schedule|timeline|date|time|timing|venue|auditorium|kab|kahan|kaha|event/i.test(cleanQ)) {
+        const scheduleMatch = allKnowledge.match(/(?:Schedule|Timeline|Event Timeline)[\s\S]*?(?=(?:\d+\.|\b===|\bDIRECTIVES|##))/i);
+        if (scheduleMatch && scheduleMatch[0].trim()) {
+          const details = scheduleMatch[0].slice(0, 400).replace(/\n+/g, " ");
+          return isHindiOrHinglish
+            ? `${websiteName} schedule aur event timings: ${details}`
+            : `Event Schedule for ${websiteName}: ${details}`;
+        }
+      }
+
+      // 4C. Check for Seat Booking / Pass / Ticket query
+      if (/book|pass|seat|ticket|entry|register|roll|lunch|food/i.test(cleanQ)) {
+        const bookingMatch = allKnowledge.match(/(?:Seat Booking|Booking|Digital Pass)[\s\S]*?(?=(?:\d+\.|\b===|\bDIRECTIVES|##))/i);
+        if (bookingMatch && bookingMatch[0].trim()) {
+          const details = bookingMatch[0].slice(0, 400).replace(/\n+/g, " ");
+          return isHindiOrHinglish
+            ? `Seat booking aur passes ki jaankari: ${details}`
+            : `Seat booking & passes information: ${details}`;
+        }
+      }
+
+      // 4D. Check for FAQ match
+      const faqMatches = Array.from(allKnowledge.matchAll(/Q:\s*([^\n]+)\s*\n+\s*A:\s*([^\n]+)/g));
+      for (const fm of faqMatches) {
+        const qText = fm[1].toLowerCase();
+        const aText = fm[2].trim();
+        const words = cleanQ.split(/\s+/).filter(w => w.length > 3);
+        const matchCount = words.filter(w => qText.includes(w)).length;
+        if (matchCount >= 2 || (words.length === 1 && qText.includes(words[0]))) {
+          return isHindiOrHinglish
+            ? `Aapke sawal ke mutabik: ${aText}`
+            : `${aText}`;
+        }
+      }
+
       // 5. Default Token-Scoring Fallback
       const tokens = cleanQ.split(/\s+/).filter((t) => t.length > 2);
       const scored = contextChunks.map((chunk) => {
