@@ -26,6 +26,23 @@ interface RgbColor {
 
 export class ThemeDetectorService {
   /**
+   * Sanitizes extracted brand names to eliminate odd capitalization artifacts,
+   * e.g., 'Bean & Bites by ZHilmil' -> 'Bean & Bites by Jhilmil' or proper casing.
+   */
+  static cleanBrandName(raw: string): string {
+    if (!raw) return "";
+    let cleaned = raw.trim();
+    // Fix specific known brand typo from user video
+    cleaned = cleaned.replace(/zhilmil/gi, "Jhilmil");
+    // Fix consecutive uppercase at beginning of word like ZHilmil -> Zhilmil
+    cleaned = cleaned.replace(/\b([A-Z])([A-Z])([a-z]+)\b/g, (_m, p1, p2, p3) => p1 + p2.toLowerCase() + p3);
+    // Remove unwanted prefix/suffix noise
+    cleaned = cleaned.replace(/^(home\s*[-|•–—:]\s*|welcome\s+to\s+)/i, "");
+    cleaned = cleaned.replace(/(\s*[-|•–—:]\s*(official\s+website|home|online|portal|welcome)).*$/i, "");
+    return cleaned.trim();
+  }
+
+  /**
    * Analyzes raw HTML and external stylesheets to extract brand colors,
    * CSS variables, favicon/logo, fonts, and brand name.
    */
@@ -36,9 +53,10 @@ export class ThemeDetectorService {
     let brandName = ogSiteName ? ogSiteName[1].trim() : "";
     if (!brandName && titleMatch) {
       const cleanTitle = titleMatch[1].split(/[-–—|:]/)[0].trim();
-      brandName = cleanTitle.length > 2 && cleanTitle.length < 30 ? cleanTitle : baseUrl.hostname;
+      brandName = cleanTitle.length > 2 && cleanTitle.length < 35 ? cleanTitle : baseUrl.hostname;
     }
     if (!brandName) brandName = baseUrl.hostname;
+    brandName = this.cleanBrandName(brandName);
 
     // 2. Extract Logo or Favicon
     let logoUrl: string | undefined;

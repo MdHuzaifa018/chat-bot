@@ -55,4 +55,26 @@ export class WidgetController {
       next(err);
     }
   }
+
+  /**
+   * POST /api/widget/:publicId/contact
+   * Submits a direct inquiry to the website owner/support team
+   */
+  static async submitContact(req: Request, res: Response, next: NextFunction) {
+    try {
+      const publicId = String(req.params.publicId);
+      const { name, email, subject, message } = req.body ?? {};
+      const result = await WidgetService.submitContactInquiry({
+        publicChatbotId: publicId,
+        name: String(name || "").trim(),
+        email: String(email || "").trim(),
+        subject: typeof subject === "string" ? subject.trim() : undefined,
+        message: String(message || "").trim(),
+        origin: req.get("origin"),
+      });
+      res.status(200).json({ data: result });
+    } catch (err) {
+      next(err);
+    }
+  }
 }

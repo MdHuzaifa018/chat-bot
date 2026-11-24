@@ -325,4 +325,83 @@ export class WidgetService {
       timestamp: new Date().toISOString(),
     };
   }
+
+  /**
+   * Submit fallback contact inquiry directly to the website owner / support team
+   */
+  static async submitContactInquiry({
+    publicChatbotId,
+    name,
+    email,
+    subject,
+    message,
+    origin,
+  }: {
+    publicChatbotId: string;
+    name: string;
+    email: string;
+    subject?: string;
+    message: string;
+    origin?: string;
+  }) {
+    if (!name || !email || !message) {
+      throw new ApiError(400, "MISSING_CONTACT_FIELDS", "Name, email, and message are required.");
+    }
+
+    const configs = await supabaseRequest<ChatbotConfig[]>(
+      `chatbot_configs?public_chatbot_id=eq.${publicChatbotId}&select=id,website_id,chatbot_name,allowed_origins,is_published&limit=1`
+    );
+    const config = configs[0];
+    if (!config || !config.is_published) {
+      throw new ApiError(404, "WIDGET_NOT_FOUND", "Chatbot widget not found.");
+    }
+    this.assertOriginAllowed(config.allowed_origins || [], origin);
+
+    let siteName = config.chatbot_name;
+    try {
+      const sites = await supabaseRequest<any[]>(
+        `websites?id=eq.${encodeURIComponent(config.website_id)}&select=id,name,url&limit=1`
+      );
+      if (sites[0]?.name) siteName = sites[0].name;
+    } catch {}
+
+    // Persist as inquiry in Supabase conversation & message log
+    try {
+      const tokenHash = hashToken(generateSessionToken());
+      const convoRows = await supabaseRequest<WidgetConversation[]>("widget_conversations", {
+        method: "POST",
+        prefer: "return=representation",
+        body: {
+          website_id: config.website_id,
+          public_chatbot_id: publicChatbotId,
+          visitor_id: `contact_${Date.now()}`,
+          session_token_hash: tokenHash,
+          status: "closed",
+        },
+      });
+      const convoId = convoRows[0]?.id;
+      if (convoId) {
+        await supabaseRequest("widget_messages", {
+          method: "POST",
+          body: {
+            conversation_id: convoId,
+            role: "user",
+            content: `[CONTACT INQUIRY from ${name} <${email}>${subject ? ` | Subject: ${subject}` : ""}]\n\n${message}`,
+          },
+        });
+      }
+    } catch (saveErr) {
+      console.warn("[WidgetService] Failed to persist inquiry:", saveErr);
+    }
+
+    console.log(
+      `[WidgetService] 📧 Fallback Contact Inquiry for "${siteName}": From ${name} <${email}> (${subject || "General Inquiry"})`
+    );
+
+    return {
+      success: true,
+      message: "Thank you! Your message has been sent to our team. We'll get back to you shortly.",
+      recipientBot: siteName,
+    };
+  }
 }

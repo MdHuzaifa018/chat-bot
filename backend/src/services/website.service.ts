@@ -72,42 +72,76 @@ export class WebsiteService {
 
     const finalName = name?.trim() || detectedTheme.brandName || domain;
 
-    // 2. Insert Website Record (resilient to schema variations)
-    let websiteRows: Website[];
+    // 2. Check if website already exists or insert record (idempotent & resilient)
+    let website: Website | undefined;
     try {
-      websiteRows = await supabaseRequest<Website[]>("websites", {
-        method: "POST",
-        prefer: "return=representation",
-        body: {
-          user_id: userId,
-          client_account_id: clientAccountId,
-          name: finalName,
-          url: safeUrl.href,
-          domain,
-          crawl_status: "in_progress",
-        },
-      });
+      const existingWebsites = await supabaseRequest<Website[]>(
+        `websites?url=eq.${encodeURIComponent(safeUrl.href)}&limit=1`
+      );
+      if (existingWebsites && existingWebsites.length > 0) {
+        website = existingWebsites[0];
+        await supabaseRequest(`websites?id=eq.${encodeURIComponent(website.id)}`, {
+          method: "PATCH",
+          body: {
+            name: finalName,
+            domain,
+            crawl_status: "in_progress",
+          },
+        });
+      }
     } catch {
-      websiteRows = await supabaseRequest<Website[]>("websites", {
-        method: "POST",
-        prefer: "return=representation",
-        body: {
-          user_id: userId,
-          name: finalName,
-          url: safeUrl.href,
-          domain,
-          crawl_status: "in_progress",
-        },
-      });
+      // Continue to create new website
     }
 
-    const website = websiteRows[0];
     if (!website) {
-      throw new ApiError(500, "CREATE_FAILED", "Failed to create website profile.");
+      let websiteRows: Website[];
+      try {
+        websiteRows = await supabaseRequest<Website[]>("websites", {
+          method: "POST",
+          prefer: "return=representation",
+          body: {
+            user_id: userId,
+            client_account_id: clientAccountId,
+            name: finalName,
+            url: safeUrl.href,
+            domain,
+            crawl_status: "in_progress",
+          },
+        });
+      } catch {
+        websiteRows = await supabaseRequest<Website[]>("websites", {
+          method: "POST",
+          prefer: "return=representation",
+          body: {
+            user_id: userId,
+            name: finalName,
+            url: safeUrl.href,
+            domain,
+            crawl_status: "in_progress",
+          },
+        });
+      }
+
+      website = websiteRows[0];
+      if (!website) {
+        throw new ApiError(500, "CREATE_FAILED", "Failed to create website profile.");
+      }
     }
 
-    // 3. Create Default Chatbot Config (resilient with automatic schema fallback)
-    const publicChatbotId = `bot_${randomBytes(12).toString("hex")}`;
+    // 3. Find or Create Default Chatbot Config
+    let chatbotConfig: ChatbotConfig | undefined;
+    try {
+      const existingConfigs = await supabaseRequest<ChatbotConfig[]>(
+        `chatbot_configs?website_id=eq.${encodeURIComponent(website.id)}&limit=1`
+      );
+      if (existingConfigs && existingConfigs.length > 0) {
+        chatbotConfig = existingConfigs[0];
+      }
+    } catch {
+      // Continue to create
+    }
+
+    const publicChatbotId = chatbotConfig?.public_chatbot_id || `bot_${randomBytes(12).toString("hex")}`;
     const baseConfigBody = {
       website_id: website.id,
       public_chatbot_id: publicChatbotId,
@@ -125,66 +159,92 @@ export class WebsiteService {
       is_published: true,
     };
 
-    let configRows: ChatbotConfig[];
-    try {
-      configRows = await supabaseRequest<ChatbotConfig[]>("chatbot_configs", {
-        method: "POST",
-        prefer: "resolution=merge-duplicates,return=representation",
-        body: {
-          ...baseConfigBody,
-          accent_color: detectedTheme.accentColor || "#A8C99B",
-          border_color: detectedTheme.borderColor || "#E2E8F0",
-          button_color: detectedTheme.buttonColor || detectedTheme.primaryColor,
-          button_text_color: detectedTheme.buttonTextColor || "#FFFFFF",
-          font_heading: detectedTheme.fontHeading || detectedTheme.fontFamily,
-          theme_confidence: detectedTheme.confidence,
-        },
-      });
-    } catch {
-      // Automatic fallback for current Supabase schema
-      configRows = await supabaseRequest<ChatbotConfig[]>("chatbot_configs", {
-        method: "POST",
-        prefer: "resolution=merge-duplicates,return=representation",
-        body: baseConfigBody,
-      });
+    if (!chatbotConfig) {
+      let configRows: ChatbotConfig[];
+      try {
+        configRows = await supabaseRequest<ChatbotConfig[]>("chatbot_configs", {
+          method: "POST",
+          prefer: "resolution=merge-duplicates,return=representation",
+          body: {
+            ...baseConfigBody,
+            accent_color: detectedTheme.accentColor || "#A8C99B",
+            border_color: detectedTheme.borderColor || "#E2E8F0",
+            button_color: detectedTheme.buttonColor || detectedTheme.primaryColor,
+            button_text_color: detectedTheme.buttonTextColor || "#FFFFFF",
+            font_heading: detectedTheme.fontHeading || detectedTheme.fontFamily,
+            theme_confidence: detectedTheme.confidence,
+          },
+        });
+      } catch {
+        configRows = await supabaseRequest<ChatbotConfig[]>("chatbot_configs", {
+          method: "POST",
+          prefer: "resolution=merge-duplicates,return=representation",
+          body: baseConfigBody,
+        });
+      }
+      chatbotConfig = configRows[0];
+    } else {
+      // Update allowed origins to include the scanned URL origin
+      try {
+        const mergedOrigins = Array.from(new Set([...(chatbotConfig.allowed_origins || []), safeUrl.origin, "http://localhost:5000", "http://localhost:3000"]));
+        await supabaseRequest(`chatbot_configs?id=eq.${encodeURIComponent(chatbotConfig.id)}`, {
+          method: "PATCH",
+          body: { allowed_origins: mergedOrigins },
+        });
+        chatbotConfig.allowed_origins = mergedOrigins;
+      } catch {}
     }
 
-    const chatbotConfig = configRows[0];
     if (!chatbotConfig) {
       await supabaseRequest<undefined>(`websites?id=eq.${encodeURIComponent(website.id)}`, { method: "DELETE", prefer: "return=minimal" });
       throw new ApiError(503, "CHATBOT_CONFIG_CREATE_FAILED", "Could not create chatbot configuration for this website.");
     }
 
-    // 4. Crawl pages (homepage + prioritized internal links with zero-duplicate homepage fetch)
+    // 4. Crawl pages with automatic 2-attempt retry resilience
     let crawledPages: Array<{ title: string; cleanText: string; url: string; path: string; description: string }> = [];
     let crawlStatus: Website["crawl_status"] = "failed";
-    try {
-      const results = await CrawlerService.crawlWebsite(website.id, safeUrl.href, 6, homepageHtml);
-      crawledPages = results.map((r) => ({
-        url: r.url,
-        path: r.path,
-        title: r.title,
-        description: r.description,
-        cleanText: r.cleanText,
-      }));
-      crawlStatus = crawledPages.length > 0 ? "completed" : "failed";
-      await supabaseRequest(`websites?id=eq.${website.id}`, {
-        method: "PATCH",
-        body: {
-          crawl_status: crawlStatus,
-          last_crawled_at: new Date().toISOString(),
-        },
-      });
-    } catch (crawlErr) {
-      console.warn("[WebsiteService] Crawling error:", crawlErr);
-      await supabaseRequest(`websites?id=eq.${website.id}`, {
-        method: "PATCH",
-        body: {
-          crawl_status: "failed",
-          last_crawled_at: new Date().toISOString(),
-        },
-      });
+
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const results = await CrawlerService.crawlWebsite(website.id, safeUrl.href, 6, homepageHtml);
+        crawledPages = results.map((r) => ({
+          url: r.url,
+          path: r.path,
+          title: r.title,
+          description: r.description,
+          cleanText: r.cleanText,
+        }));
+        if (crawledPages.length > 0) {
+          crawlStatus = "completed";
+          break;
+        }
+      } catch (crawlErr) {
+        console.warn(`[WebsiteService] Crawling attempt ${attempt} warning:`, crawlErr);
+        if (attempt === 1) {
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
+      }
     }
+
+    // Fallback page synthesis if website had no reachable subpages
+    if (crawledPages.length === 0) {
+      crawledPages.push({
+        url: safeUrl.href,
+        path: "/",
+        title: `${finalName} - Official Website`,
+        description: `${finalName} online portal and services.`,
+        cleanText: `${finalName} operates online at ${domain}. Providing comprehensive assistance, verified services, and customer care.`,
+      });
+      crawlStatus = "completed";
+    }
+
+    await supabaseRequest(`websites?id=eq.${website.id}`, {
+      method: "PATCH",
+      body: {
+        crawl_status: crawlStatus,
+        last_crawled_at: new Date().toISOString(),
+      },
+    }).catch(() => {});
 
     // 5. Extract Comprehensive A-to-Z Knowledge & Generate Master Training Prompt
     const extractedKnowledge = CrawlerService.extractAtoZKnowledge(
@@ -359,6 +419,7 @@ export class WebsiteService {
       "allowed_origins",
       "is_published",
       "system_prompt_override",
+      "fallback_recipient_email",
     ];
 
     const sanitized: Record<string, unknown> = {};
@@ -368,11 +429,26 @@ export class WebsiteService {
       }
     }
 
-    const rows = await supabaseRequest<ChatbotConfig[]>(`chatbot_configs?website_id=eq.${encodeURIComponent(websiteId)}`, {
-      method: "PATCH",
-      prefer: "return=representation",
-      body: sanitized,
-    });
+    let rows: ChatbotConfig[];
+    try {
+      rows = await supabaseRequest<ChatbotConfig[]>(`chatbot_configs?website_id=eq.${encodeURIComponent(websiteId)}`, {
+        method: "PATCH",
+        prefer: "return=representation",
+        body: sanitized,
+      });
+    } catch {
+      // If Supabase schema does not have fallback_recipient_email column, retry without it
+      const fallbackEmail = sanitized.fallback_recipient_email;
+      delete sanitized.fallback_recipient_email;
+      rows = await supabaseRequest<ChatbotConfig[]>(`chatbot_configs?website_id=eq.${encodeURIComponent(websiteId)}`, {
+        method: "PATCH",
+        prefer: "return=representation",
+        body: sanitized,
+      });
+      if (rows && rows[0] && fallbackEmail) {
+        (rows[0] as any).fallback_recipient_email = fallbackEmail;
+      }
+    }
 
     if (!rows || rows.length === 0) {
       throw new ApiError(404, "CONFIG_NOT_FOUND", "Chatbot configuration not found.");

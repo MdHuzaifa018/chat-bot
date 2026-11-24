@@ -9,3 +9,4 @@ widgetRouter.get("/config", WidgetController.getConfig);
 widgetRouter.get("/:publicId/config", WidgetController.getConfig);
 widgetRouter.post("/:publicId/session", publicRateLimiter, WidgetController.startSession);
 widgetRouter.post("/:publicId/message", publicRateLimiter, WidgetController.sendMessage);
+widgetRouter.post("/:publicId/contact", publicRateLimiter, WidgetController.submitContact);

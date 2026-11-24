@@ -418,6 +418,132 @@
       text-decoration: underline;
     }
 
+    .contact-prompt-bar {
+      margin-top: 10px;
+      padding: 8px 12px;
+      text-align: center;
+      font-size: 12px;
+      color: #64748B;
+      background: #FFFFFF;
+      border: 1px dashed #CBD5E1;
+      border-radius: 12px;
+    }
+
+    .contact-prompt-btn {
+      background: none;
+      border: none;
+      color: var(--secondary-color, #254B35);
+      font-weight: 600;
+      text-decoration: underline;
+      cursor: pointer;
+      font-size: 12px;
+      margin-left: 4px;
+    }
+
+    .contact-prompt-btn:hover {
+      opacity: 0.85;
+    }
+
+    .contact-drawer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: #FFFFFF;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      transform: translateY(100%);
+      transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .contact-drawer.open {
+      transform: translateY(0);
+    }
+
+    .contact-drawer-header {
+      background: var(--primary-color, #0F172A);
+      color: #FFFFFF;
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .contact-drawer-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: #FFFFFF;
+    }
+
+    .contact-drawer-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .contact-input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .contact-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: #475569;
+    }
+
+    .contact-input, .contact-textarea {
+      width: 100%;
+      border: 1px solid #CBD5E1;
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-size: 13px;
+      color: #1E293B;
+      background: #F8FAFC;
+      outline: none;
+      transition: border-color 0.15s ease;
+      box-sizing: border-box;
+    }
+
+    .contact-input:focus, .contact-textarea:focus {
+      border-color: var(--secondary-color, #254B35);
+      background: #FFFFFF;
+    }
+
+    .contact-submit-btn {
+      margin-top: 8px;
+      background: var(--primary-color, #0F172A);
+      color: #FFFFFF;
+      border: none;
+      border-radius: 12px;
+      padding: 10px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s ease;
+    }
+
+    .contact-submit-btn:hover {
+      opacity: 0.9;
+    }
+
+    .contact-cancel-btn {
+      background: transparent;
+      border: 1px solid #E2E8F0;
+      color: #64748B;
+      border-radius: 12px;
+      padding: 8px 16px;
+      font-size: 13px;
+      cursor: pointer;
+      text-align: center;
+    }
+
     @media (max-width: 480px) {
       .window {
         bottom: 0 !important;
@@ -485,6 +611,42 @@
         </form>
         <div class="branding">Powered by <a href="/" target="_blank" rel="noopener">SupportAI</a></div>
       </div>
+
+      <!-- In-Widget Contact Drawer -->
+      <div class="contact-drawer" id="contact-drawer">
+        <div class="contact-drawer-header">
+          <span class="contact-drawer-title">Email Our Team</span>
+          <button class="close-btn" id="contact-drawer-close" aria-label="Close Contact Form">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+        <form class="contact-drawer-body" id="contact-form">
+          <p style="font-size: 12px; color: #64748B; margin-bottom: 2px;">
+            Didn't find your answer? Send a direct message to our support team and we will get back to you via email.
+          </p>
+          <div class="contact-input-group">
+            <label class="contact-label" for="contact-name">Your Name *</label>
+            <input type="text" id="contact-name" class="contact-input" placeholder="e.g. Rahul Sharma" required />
+          </div>
+          <div class="contact-input-group">
+            <label class="contact-label" for="contact-email">Your Email *</label>
+            <input type="email" id="contact-email" class="contact-input" placeholder="e.g. rahul@example.com" required />
+          </div>
+          <div class="contact-input-group">
+            <label class="contact-label" for="contact-subject">Subject (Optional)</label>
+            <input type="text" id="contact-subject" class="contact-input" placeholder="Question or request details..." />
+          </div>
+          <div class="contact-input-group">
+            <label class="contact-label" for="contact-message">Message *</label>
+            <textarea id="contact-message" class="contact-textarea" rows="3" placeholder="How can our team help you?" required></textarea>
+          </div>
+          <button type="submit" class="contact-submit-btn" id="contact-submit-btn">Send Message</button>
+          <button type="button" class="contact-cancel-btn" id="contact-cancel-btn">Back to Chat</button>
+        </form>
+      </div>
     </div>
   `;
   shadow.appendChild(wrapper);
@@ -500,6 +662,17 @@
   const chatInput = shadow.getElementById("chat-input");
   const botTitle = shadow.getElementById("bot-title");
   const botAvatar = shadow.getElementById("bot-avatar");
+
+  // Contact drawer handles
+  const contactDrawer = shadow.getElementById("contact-drawer");
+  const contactDrawerClose = shadow.getElementById("contact-drawer-close");
+  const contactCancelBtn = shadow.getElementById("contact-cancel-btn");
+  const contactForm = shadow.getElementById("contact-form");
+  const contactNameInput = shadow.getElementById("contact-name");
+  const contactEmailInput = shadow.getElementById("contact-email");
+  const contactSubjectInput = shadow.getElementById("contact-subject");
+  const contactMessageInput = shadow.getElementById("contact-message");
+  const contactSubmitBtn = shadow.getElementById("contact-submit-btn");
 
   let isOpen = false;
   let visitorId = "";
@@ -552,7 +725,73 @@
     msgEl.appendChild(timeEl);
 
     messagesBody.appendChild(msgEl);
+    ensureContactPromptBar();
     messagesBody.scrollTop = messagesBody.scrollHeight;
+  }
+
+  // Render or re-position the fallback contact inquiry prompt
+  function ensureContactPromptBar() {
+    let bar = shadow.getElementById("contact-prompt-bar");
+    if (!bar) {
+      bar = document.createElement("div");
+      bar.id = "contact-prompt-bar";
+      bar.className = "contact-prompt-bar";
+      bar.innerHTML = `Didn't find your answer? <button type="button" class="contact-prompt-btn" id="open-contact-drawer-btn">Email our team</button>`;
+      messagesBody.appendChild(bar);
+      const openBtn = bar.querySelector("#open-contact-drawer-btn");
+      if (openBtn) {
+        openBtn.addEventListener("click", () => {
+          contactDrawer.classList.add("open");
+          contactNameInput.focus();
+        });
+      }
+    } else {
+      messagesBody.appendChild(bar);
+    }
+  }
+
+  // Contact drawer close listeners
+  if (contactDrawerClose) {
+    contactDrawerClose.addEventListener("click", () => contactDrawer.classList.remove("open"));
+  }
+  if (contactCancelBtn) {
+    contactCancelBtn.addEventListener("click", () => contactDrawer.classList.remove("open"));
+  }
+
+  // Contact form submit listener
+  if (contactForm) {
+    contactForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const name = contactNameInput.value.trim();
+      const email = contactEmailInput.value.trim();
+      const subject = contactSubjectInput.value.trim();
+      const message = contactMessageInput.value.trim();
+
+      if (!name || !email || !message) return;
+
+      contactSubmitBtn.disabled = true;
+      contactSubmitBtn.textContent = "Sending...";
+
+      try {
+        const res = await fetch(`${apiBase}/api/widget/${publicChatbotId}/contact`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, email, subject, message }),
+        });
+        const json = await res.json();
+        contactDrawer.classList.remove("open");
+        contactForm.reset();
+        appendMessage(
+          "assistant",
+          `✅ ${json?.data?.message || "Thank you! Your message has been sent to our team. We will get back to you shortly."}`
+        );
+      } catch (err) {
+        alert("Failed to send message. Please check your connection and try again.");
+      } finally {
+        contactSubmitBtn.disabled = false;
+        contactSubmitBtn.textContent = "Send Message";
+      }
+    });
   }
 
   // Render typing indicator

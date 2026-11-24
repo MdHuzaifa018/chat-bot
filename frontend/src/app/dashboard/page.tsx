@@ -27,6 +27,7 @@ import {
   Clock,
   DollarSign,
   Briefcase,
+  X,
 } from "lucide-react";
 import {
   fetchWebsites,
@@ -131,6 +132,17 @@ export default function ChatbotSettingsPage() {
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
+  // Fallback Recipient Email State
+  const [fallbackEmail, setFallbackEmail] = useState("support@curiousrabit.online");
+
+  // In-Preview Contact Drawer State
+  const [showPreviewContactDrawer, setShowPreviewContactDrawer] = useState(false);
+  const [previewContactName, setPreviewContactName] = useState("");
+  const [previewContactEmail, setPreviewContactEmail] = useState("");
+  const [previewContactSubject, setPreviewContactSubject] = useState("");
+  const [previewContactMessage, setPreviewContactMessage] = useState("");
+  const [previewContactSending, setPreviewContactSending] = useState(false);
+
   // Chatbot Training & A-to-Z Knowledge Base State
   const [trainingPrompt, setTrainingPrompt] = useState<string>("");
   const [extractedKnowledge, setExtractedKnowledge] = useState<any>(null);
@@ -176,8 +188,19 @@ export default function ChatbotSettingsPage() {
             if (cfg.primary_color) setPrimaryColor(cfg.primary_color);
             if (cfg.secondary_color) setSecondaryColor(cfg.secondary_color);
             if (cfg.background_color) setSurfaceColor(cfg.background_color);
+            if ((cfg as any).fallback_recipient_email) {
+              setFallbackEmail((cfg as any).fallback_recipient_email);
+              localStorage.setItem("supportai_fallback_email", (cfg as any).fallback_recipient_email);
+            }
           } else {
             setBotName(`${activeSite.name || "Support"} Assistant`);
+          }
+
+          const savedEmail = localStorage.getItem("supportai_fallback_email");
+          if (savedEmail) {
+            setFallbackEmail(savedEmail);
+          } else if (details.extractedKnowledge?.contact?.emails?.[0]) {
+            setFallbackEmail(details.extractedKnowledge.contact.emails[0]);
           }
 
           // Training prompt & knowledge
@@ -418,6 +441,10 @@ export default function ChatbotSettingsPage() {
             "supportai_extracted_knowledge",
             JSON.stringify(data.extractedKnowledge)
           );
+          if (data.extractedKnowledge?.contact?.emails?.[0]) {
+            setFallbackEmail(data.extractedKnowledge.contact.emails[0]);
+            localStorage.setItem("supportai_fallback_email", data.extractedKnowledge.contact.emails[0]);
+          }
         }
         if (Array.isArray(data.crawledPages)) {
           setCrawledPagesList(data.crawledPages);
@@ -624,10 +651,12 @@ export default function ChatbotSettingsPage() {
         publicChatbotId,
         detectedTheme,
         trainingPrompt,
+        fallbackEmail,
         updatedAt: Date.now(),
       };
 
       localStorage.setItem("supportai_config", JSON.stringify(payload));
+      localStorage.setItem("supportai_fallback_email", fallbackEmail);
       if (publicChatbotId) {
         localStorage.setItem("supportai_public_chatbot_id", publicChatbotId);
       }
@@ -643,7 +672,8 @@ export default function ChatbotSettingsPage() {
           secondary_color: secondaryColor,
           background_color: surfaceColor,
           system_prompt_override: trainingPrompt,
-        });
+          ...(fallbackEmail ? { fallback_recipient_email: fallbackEmail.trim() } : {}),
+        } as any);
 
         const questionsPayload = [
           ...suggestedQuestions.map((q) => ({ question_text: q })),
@@ -1311,6 +1341,23 @@ export default function ChatbotSettingsPage() {
                 className="w-full bg-[#F1F7EF] border border-[#E5F0E1] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#A8C99B] resize-none"
               />
             </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-[#647267] flex items-center justify-between">
+                <span>Fallback Recipient Email</span>
+                <span className="text-[11px] text-[#254B35] font-normal">Receives visitor messages when &apos;Email our team&apos; is clicked</span>
+              </label>
+              <div className="relative">
+                <input
+                  type="email"
+                  value={fallbackEmail}
+                  onChange={(e) => setFallbackEmail(e.target.value)}
+                  placeholder="support@curiousrabit.online"
+                  className="w-full bg-[#F1F7EF] border border-[#E5F0E1] rounded-xl pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#A8C99B]"
+                />
+                <Mail className="w-4 h-4 text-[#647267] absolute left-3 top-3 pointer-events-none" />
+              </div>
+            </div>
           </div>
 
           {/* 4. AI Suggested Questions */}
@@ -1412,7 +1459,7 @@ export default function ChatbotSettingsPage() {
 
         {/* RIGHT COLUMN: Sticky Interactive Live Preview */}
         <div className="lg:col-span-5 lg:sticky lg:top-28">
-          <div className="bg-white rounded-3xl border border-[#E5F0E1] shadow-xl overflow-hidden flex flex-col h-[600px]">
+          <div className="bg-white rounded-3xl border border-[#E5F0E1] shadow-xl overflow-hidden flex flex-col h-[600px] relative">
             {/* Widget Header: Updates in real-time with primaryColor & secondaryColor */}
             <div
               className="p-4 text-white flex items-center justify-between transition-colors duration-300"
@@ -1500,7 +1547,148 @@ export default function ChatbotSettingsPage() {
                   {msg.text}
                 </div>
               ))}
+
+              {/* Fallback In-Widget Contact Prompt Bar */}
+              <div className="pt-2 pb-1 text-center">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/95 border border-[#E5F0E1] text-[11px] text-[#647267] shadow-xs">
+                  <span>Didn&apos;t find your answer?</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowPreviewContactDrawer(true)}
+                    className="font-semibold underline hover:opacity-85 transition-opacity cursor-pointer"
+                    style={{ color: secondaryColor || primaryColor }}
+                  >
+                    Email our team
+                  </button>
+                </div>
+              </div>
             </div>
+
+            {/* In-Preview Contact Drawer Overlay */}
+            {showPreviewContactDrawer && (
+              <div className="absolute inset-0 bg-white z-20 flex flex-col animate-in fade-in duration-200">
+                <div
+                  className="p-4 text-white flex items-center justify-between"
+                  style={{ backgroundColor: primaryColor }}
+                >
+                  <div className="flex items-center gap-2">
+                    <Mail className="w-4 h-4" />
+                    <h4 className="font-semibold text-sm">Email Our Team</h4>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowPreviewContactDrawer(false)}
+                    className="p-1 rounded-lg bg-white/15 hover:bg-white/25 transition-colors cursor-pointer"
+                    aria-label="Close form"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    if (!previewContactName.trim() || !previewContactEmail.trim() || !previewContactMessage.trim()) return;
+                    setPreviewContactSending(true);
+                    try {
+                      const activeBotId = publicChatbotId || "bot_demo12345678";
+                      await apiRequest(`/widget/${encodeURIComponent(activeBotId)}/contact`, {
+                        method: "POST",
+                        body: JSON.stringify({
+                          name: previewContactName.trim(),
+                          email: previewContactEmail.trim(),
+                          subject: previewContactSubject.trim(),
+                          message: previewContactMessage.trim(),
+                        }),
+                      }).catch(() => {});
+
+                      setShowPreviewContactDrawer(false);
+                      setPreviewMessages((prev) => [
+                        ...prev,
+                        {
+                          sender: "bot",
+                          text: `✅ Thank you, ${previewContactName}! Your inquiry has been sent to our team at ${fallbackEmail || "support"}. We will get back to you shortly.`,
+                        },
+                      ]);
+                      setPreviewContactMessage("");
+                      setPreviewContactSubject("");
+                    } finally {
+                      setPreviewContactSending(false);
+                    }
+                  }}
+                  className="flex-1 p-4 overflow-y-auto space-y-3 text-xs"
+                >
+                  <p className="text-[#647267] text-[11px] leading-relaxed">
+                    Didn&apos;t find what you needed? Send a direct message to {botName || "our team"} and we will get back to you via email.
+                  </p>
+
+                  <div className="space-y-1">
+                    <label className="font-medium text-[#202820]">Your Name *</label>
+                    <input
+                      type="text"
+                      required
+                      value={previewContactName}
+                      onChange={(e) => setPreviewContactName(e.target.value)}
+                      placeholder="e.g. Rahul Sharma"
+                      className="w-full bg-[#F1F7EF] border border-[#E5F0E1] rounded-xl px-3 py-2 text-xs focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="font-medium text-[#202820]">Your Email *</label>
+                    <input
+                      type="email"
+                      required
+                      value={previewContactEmail}
+                      onChange={(e) => setPreviewContactEmail(e.target.value)}
+                      placeholder="e.g. rahul@example.com"
+                      className="w-full bg-[#F1F7EF] border border-[#E5F0E1] rounded-xl px-3 py-2 text-xs focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="font-medium text-[#202820]">Subject (Optional)</label>
+                    <input
+                      type="text"
+                      value={previewContactSubject}
+                      onChange={(e) => setPreviewContactSubject(e.target.value)}
+                      placeholder="Inquiry about services or plans..."
+                      className="w-full bg-[#F1F7EF] border border-[#E5F0E1] rounded-xl px-3 py-2 text-xs focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="font-medium text-[#202820]">Message *</label>
+                    <textarea
+                      required
+                      rows={3}
+                      value={previewContactMessage}
+                      onChange={(e) => setPreviewContactMessage(e.target.value)}
+                      placeholder="How can our support team assist you?"
+                      className="w-full bg-[#F1F7EF] border border-[#E5F0E1] rounded-xl px-3 py-2 text-xs focus:outline-none resize-none"
+                    />
+                  </div>
+
+                  <div className="pt-2 flex items-center gap-2">
+                    <button
+                      type="submit"
+                      disabled={previewContactSending}
+                      className="flex-1 py-2.5 rounded-xl text-white font-medium text-xs transition-opacity cursor-pointer disabled:opacity-50"
+                      style={{ backgroundColor: primaryColor }}
+                    >
+                      {previewContactSending ? "Sending..." : "Send Message"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowPreviewContactDrawer(false)}
+                      className="px-4 py-2.5 border border-[#E5F0E1] rounded-xl text-xs text-[#647267] hover:bg-[#F1F7EF] transition-colors cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
 
             {/* Widget Input: Real-time focus and send button coloring */}
             <form
